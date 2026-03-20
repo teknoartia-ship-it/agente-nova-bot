@@ -13,7 +13,7 @@ bot = telebot.TeleBot(TOKEN)
 def cerebro_ia(texto):
     if not HF_TOKEN: return "⚠️ Configura el HF_TOKEN en Render."
     # Usamos Mistral que es el más fiable
-    url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
+    url = "https://api-inference.huggingface.co/models/google/gemma-1.1-2b-it"
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     payload = {"inputs": f"<s>[INST] Responde muy breve en español: {texto} [/INST]"}
     
