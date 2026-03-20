@@ -62,12 +62,20 @@ if __name__ == "__main__":
     import threading
     import time
 
-    # 1. Limpiamos cualquier rastro previo en Telegram
-    bot.remove_webhook()
-    time.sleep(1) # Damos un segundo de respiro
-    
-    # 2. Arrancamos el bot ignorando mensajes antiguos que causen bucles
+    # Forzamos el cierre de cualquier sesión previa en Telegram
+    try:
+        bot.remove_webhook()
+        bot.stop_polling()
+        time.sleep(2)  # Pausa de seguridad para que Telegram se limpie
+    except:
+        pass
+
+    # Arrancamos el bot ignorando mensajes antiguos (evita bucles)
     threading.Thread(target=lambda: bot.infinity_polling(skip_pending=True), daemon=True).start()
+    
+    # Arrancamos el servidor para que Render no dé error de puerto
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
     
     # 3. Arrancamos el servidor para Render
     port = int(os.environ.get("PORT", 5000))
