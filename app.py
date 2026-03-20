@@ -12,21 +12,23 @@ bot = telebot.TeleBot(TOKEN)
 
 def cerebro_ia(texto):
     if not HF_TOKEN: return "⚠️ Configura el HF_TOKEN en Render."
-    # Usamos Mistral que es el más fiable
-    url = "https://api-inference.huggingface.co/models/google/gemma-1.1-2b-it"
+    # Cambiamos a un modelo que responde al instante (Facebook Blenderbot)
+    url = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill"
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {"inputs": f"<s>[INST] Responde muy breve en español: {texto} [/INST]"}
+    payload = {"inputs": texto}
     
     try:
-        # Timeout corto (10s) para que no se congele el bot
         res = requests.post(url, headers=headers, json=payload, timeout=10)
         resultado = res.json()
-        if isinstance(resultado, list):
-            return resultado[0]['generated_text'].split("[/INST]")[-1].strip()
+        # Este modelo devuelve una estructura distinta, la ajustamos:
+        if isinstance(resultado, list) and 'generated_text' in resultado[0]:
+            return resultado[0]['generated_text']
+        elif 'error' in resultado:
+            return f"🤯 Hugging Face dice: {resultado['error']}"
         else:
-            return "🤯 La IA está despertando, reintenta en 10 segundos."
-    except:
-        return "❌ Error de conexión con el cerebro."
+            return "❌ Respuesta inesperada del cerebro."
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
 @bot.message_handler(commands=['start'])
 def start(m):
