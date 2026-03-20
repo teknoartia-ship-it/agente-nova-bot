@@ -57,7 +57,18 @@ def start(message):
     bot.reply_to(message, "🚀 Nova Online.\n/buscar\n/traducir\n/analizar")
 
 # Ejecución dual: Bot + Servidor Web
+# --- INICIO ---
 if __name__ == "__main__":
-    threading.Thread(target=lambda: bot.infinity_polling(), daemon=True).start()
+    import threading
+    import time
+
+    # 1. Limpiamos cualquier rastro previo en Telegram
+    bot.remove_webhook()
+    time.sleep(1) # Damos un segundo de respiro
+    
+    # 2. Arrancamos el bot ignorando mensajes antiguos que causen bucles
+    threading.Thread(target=lambda: bot.infinity_polling(skip_pending=True), daemon=True).start()
+    
+    # 3. Arrancamos el servidor para Render
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
