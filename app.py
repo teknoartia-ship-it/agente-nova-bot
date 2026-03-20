@@ -13,7 +13,7 @@ bot = telebot.TeleBot(TOKEN)
 def cerebro_ia(texto):
     if not HF_TOKEN: return "⚠️ Configura el HF_TOKEN en Render."
     # Cambiamos a un modelo que responde al instante (Facebook Blenderbot)
-    url = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill"
+    url = "https://router.huggingface.co/hf-inference/models/facebook/blenderbot-400M-distill"
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     payload = {"inputs": texto}
     
