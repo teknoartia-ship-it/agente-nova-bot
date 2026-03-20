@@ -19,14 +19,21 @@ bot = telebot.TeleBot(TOKEN)
 
 def cerebro_ia(texto):
     if not HF_TOKEN: return "⚠️ Falta HF_TOKEN en Render."
-    url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+    # Este modelo es "Open" y no requiere aceptar licencias manuales
+    url = "https://api-inference.huggingface.co/models/Mistralai/Mistral-7B-Instruct-v0.3"
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {"inputs": f"Responde corto en español: {texto}"}
+    payload = {
+        "inputs": f"<s>[INST] Responde de forma muy breve y en español: {texto} [/INST]",
+        "parameters": {"max_new_tokens": 150}
+    }
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=10)
+        res = requests.post(url, headers=headers, json=payload, timeout=15)
+        # Mistral devuelve una lista, extraemos el texto generado
         resultado = res.json()[0]['generated_text']
-        return resultado.split("español:")[1].strip() if "español:" in resultado else resultado
-    except: return "🤯 Cerebro saturado o error de conexión."
+        # Limpiamos para que no repita tu pregunta
+        return resultado.split("[/INST]")[-1].strip()
+    except Exception as e:
+        return "🤯 El cerebro está despertando, intenta en 10 segundos."
 
 @bot.message_handler(commands=['traducir'])
 def traducir(message):
