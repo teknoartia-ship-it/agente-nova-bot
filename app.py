@@ -4,6 +4,9 @@ import telebot
 
 # --- CONFIGURACIÓN ---
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
+# Tu URL de Render ya configurada
+URL_PROYECTO = "https://agente-nova-bot.onrender.com" 
+
 bot = telebot.TeleBot(TOKEN_TELEGRAM)
 app = Flask(__name__)
 
@@ -13,6 +16,7 @@ app = Flask(__name__)
 def index():
     return "Servidor de Nova: ONLINE", 200
 
+# Ruta segura usando el Token
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -32,21 +36,23 @@ def send_welcome(message):
 def echo_all(message):
     bot.reply_to(message, "Mensaje recibido. Procesando...")
 
-# --- INICIO SEGURO DEL WEBHOOK ---
+# --- CONFIGURACIÓN ÚNICA DEL WEBHOOK ---
 
-def iniciar_webhook():
-    render_url = os.environ.get('RENDER_EXTERNAL_URL')
-    if render_url:
-        webhook_url = f"{render_url}/{TOKEN_TELEGRAM}"
-        try:
-            bot.remove_webhook()
-            bot.set_webhook(url=webhook_url)
-            print(f"Webhook OK: {webhook_url}")
-        except Exception as e:
-            print(f"Error Webhook: {e}")
+def configurar_webhook():
+    if not TOKEN_TELEGRAM:
+        print("Error: No se encontró la variable TOKEN_TELEGRAM")
+        return
+    
+    webhook_url = f"{URL_PROYECTO}/{TOKEN_TELEGRAM}"
+    try:
+        bot.remove_webhook()
+        bot.set_webhook(url=webhook_url)
+        print(f"Webhook configurado en: {webhook_url}")
+    except Exception as e:
+        print(f"Error al configurar Webhook: {e}")
 
-# Ejecución
-iniciar_webhook()
+# Ejecutar configuración al arrancar el servidor
+configurar_webhook()
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
