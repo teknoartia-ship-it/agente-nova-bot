@@ -1,5 +1,4 @@
-pyTelegramBotAPI
-requests
-deep-translator
-beautifulsoup4
+python-telegram-bot
 flask
+huggingface_hub
+requests
