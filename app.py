@@ -1,67 +1,52 @@
 import os
-import requests
-import telebot
-from telebot import TeleBot
 from flask import Flask, request
+import telebot
 
-# Configuración desde variables de entorno
-TOKEN_TELEGRAM = os.environ.get("TOKEN_TELEGRAM")
-HF_TOKEN = os.environ.get("HF_TOKEN")
-# Usamos un modelo más ligero (Gemma) para evitar esperas infinitas
-API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
-
-bot = TeleBot(TOKEN_TELEGRAM)
+# --- CONFIGURACIÓN ---
+TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
+bot = telebot.TeleBot(TOKEN_TELEGRAM)
 app = Flask(__name__)
 
-def cerebro_ia(texto):
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {
-        "inputs": f"Responde de forma breve y en español a lo siguiente: {texto}",
-        "parameters": {"max_new_tokens": 150, "return_full_text": False},
-        "options": {"wait_for_model": True}
-    }
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-        result = response.json()
-        
-        # Manejo de la respuesta según el formato de Hugging Face
-        if isinstance(result, list) and len(result) > 0:
-            return result[0].get('generated_text', 'No tengo respuesta ahora.')
-        elif isinstance(result, dict) and 'generated_text' in result:
-            return result['generated_text']
-        else:
-            return "⚠️ La IA se está desperezando, reintenta en 15 segundos."
-    except Exception as e:
-        return "⚠️ El cerebro está tardando en conectar. Prueba de nuevo ahora."
+# --- RUTAS ---
+
+@app.route('/')
+def index():
+    return "Servidor de Nova: ONLINE", 200
+
+@app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    return 'Error', 403
+
+# --- LÓGICA DEL BOT ---
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "✅ ¡Nova activa! Usa /analizar seguido de tu mensaje.")
+    bot.reply_to(message, "¡Hola! Soy Nova. Ya estoy configurada correctamente.")
 
-@bot.message_handler(commands=['analizar'])
-def handle_analizar(message):
-    pregunta = message.text.replace('/analizar', '').strip()
-    if not pregunta:
-        bot.reply_to(message, "Escribe algo después de /analizar (ejemplo: /analizar hola)")
-        return
-    
-    msg_espera = bot.reply_to(message, "🧠 Nova pensando...")
-    respuesta = cerebro_ia(pregunta)
-    bot.edit_message_text(respuesta, message.chat.id, msg_espera.message_id)
+@bot.message_handler(func=lambda message: True)
+def echo_all(message):
+    bot.reply_to(message, "Mensaje recibido. Procesando...")
 
-@app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
-def getMessage():
-    json_string = request.get_data().decode('utf-8')
-    update = telebot.types.Update.de_json(json_string)
-    bot.process_new_updates([update])
-    return "!", 200
+# --- INICIO SEGURO DEL WEBHOOK ---
 
-@app.route("/")
-def webhook():
-    # Limpiamos y ponemos el webhook manualmente al entrar a la URL
-    bot.remove_webhook()
-    bot.set_webhook(url='https://' + request.host + '/' + TOKEN_TELEGRAM)
-    return "<h1>Servidor de Nova: ONLINE</h1><p>El Webhook ha sido configurado.</p>", 200
+def iniciar_webhook():
+    render_url = os.environ.get('RENDER_EXTERNAL_URL')
+    if render_url:
+        webhook_url = f"{render_url}/{TOKEN_TELEGRAM}"
+        try:
+            bot.remove_webhook()
+            bot.set_webhook(url=webhook_url)
+            print(f"Webhook OK: {webhook_url}")
+        except Exception as e:
+            print(f"Error Webhook: {e}")
+
+# Ejecución
+iniciar_webhook()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 10000)))
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
