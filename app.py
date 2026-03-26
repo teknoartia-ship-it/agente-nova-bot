@@ -51,7 +51,6 @@ def handle_analizar(message):
     msg_espera = bot.reply_to(message, "🧠 Pensando...")
     respuesta = cerebro_ia(texto_usuario)
     bot.edit_message_text(respuesta, message.chat.id, msg_espera.message_id)
-
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def getMessage():
     json_string = request.get_data().decode('utf-8')
@@ -61,9 +60,13 @@ def getMessage():
 
 @app.route("/")
 def webhook():
-    bot.remove_webhook()
-    bot.set_webhook(url='https://' + request.host + '/' + TOKEN_TELEGRAM)
-    return "Bot de Nova Funcionando", 200
+    # Solo intentamos poner el webhook si entramos manualmente a la URL principal
+    try:
+        bot.remove_webhook()
+        bot.set_webhook(url='https://agente-nova-bot.onrender.com/' + TOKEN_TELEGRAM)
+        return "Bot de Nova Configurado y Funcionando", 200
+    except Exception as e:
+        return f"Error al configurar: {str(e)}", 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 10000)))
