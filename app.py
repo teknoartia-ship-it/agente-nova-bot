@@ -8,7 +8,7 @@ HF_TOKEN = os.environ.get('HF_TOKEN')
 URL_PROYECTO = os.environ.get('URL_PROYECTO')
 
 # Cambiamos a un modelo muy ligero y estable
-API_URL = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill"
+API_URL = "https://router.huggingface.co/hf-inference/models/HuggingFaceH4/zephyr-7b-beta"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
