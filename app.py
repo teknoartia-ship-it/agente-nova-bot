@@ -9,7 +9,7 @@ HF_TOKEN = os.environ.get('HF_TOKEN')
 URL_PROYECTO = "https://agente-nova-bot.onrender.com"
 
 # MODELO QWEN: Sin restricciones de licencia y muy rápido
-API_URL = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-7B-Instruct"
+API_URL = "https://router.huggingface.co/hf-inference/models/Qwen/Qwen2.5-7B-Instruct"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM)
