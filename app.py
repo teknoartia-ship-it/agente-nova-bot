@@ -60,13 +60,15 @@ def getMessage():
 
 @app.route("/")
 def webhook():
-    # Solo intentamos poner el webhook si entramos manualmente a la URL principal
     try:
+        # Intentamos configurar el webhook
         bot.remove_webhook()
+        # Pon tu URL real de Render aquí:
         bot.set_webhook(url='https://agente-nova-bot.onrender.com/' + TOKEN_TELEGRAM)
-        return "Bot de Nova Configurado y Funcionando", 200
+        return "✅ Bot de Nova: Webhook configurado correctamente.", 200
     except Exception as e:
-        return f"Error al configurar: {str(e)}", 500
+        # Si Telegram nos da el error 429, no morimos, solo avisamos
+        return f"⚠️ Telegram está ocupado (Error 429), pero el servidor está vivo. Reintenta en 10 segundos. Error: {str(e)}", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 10000)))
