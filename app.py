@@ -1,46 +1,49 @@
 import os
 import requests
-from flask import Flask, request
 import telebot
+from flask import Flask, request
 
 # --- CONFIGURACIÓN ---
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 HF_TOKEN = os.environ.get('HF_TOKEN')
 URL_PROYECTO = "https://agente-nova-bot.onrender.com"
 
-# Configuración de Hugging Face (Modelo recomendado: Mistral)
-API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
+# MODELO QWEN: Sin restricciones de licencia y muy rápido
+API_URL = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-7B-Instruct"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM)
 app = Flask(__name__)
 
-# --- CEREBRO (IA) ---
-
 def obtener_respuesta_ia(texto_usuario):
-    """Envía el mensaje a Hugging Face y devuelve la respuesta de la IA"""
+    # Formato de mensaje optimizado para chat
     payload = {
-        "inputs": f"Responde de forma breve y amable en español: {texto_usuario}",
-        "parameters": {"max_new_tokens": 150, "temperature": 0.7}
+        "inputs": f"<|im_start|>system\nEres Nova, una asistente divertida y breve.<|im_end|>\n<|im_start|>user\n{texto_usuario}<|im_end|>\n<|im_start|>assistant\n",
+        "parameters": {"max_new_tokens": 100, "temperature": 0.7, "return_full_text": False}
     }
     
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=25)
         resultado = response.json()
         
-        # Hugging Face devuelve una lista con el texto generado
+        if response.status_code == 503:
+            return "⏳ Mi cerebro se está despertando. Dame 15 segundos y vuelve a preguntarme."
+
         if isinstance(resultado, list) and len(resultado) > 0:
-            return resultado[0]['generated_text'].split("espauñol:")[-1].strip()
-        return "Lo siento, estoy teniendo problemas para pensar ahora mismo."
+            return resultado[0].get('generated_text', '').strip()
+
+        if isinstance(resultado, dict) and "error" in resultado:
+            return f"❌ Nota de mi sistema: {resultado['error']}"
+
+        return "🤔 No he podido procesar eso, ¿probamos otra vez?"
     except Exception as e:
-        print(f"Error IA: {e}")
-        return "Mi cerebro está desconectado temporalmente."
+        return f"⚠️ Error de conexión: {str(e)}"
 
 # --- RUTAS ---
 
 @app.route('/')
 def index():
-    return "Servidor de Nova: ONLINE y PENSANDO", 200
+    return "Nova está viva", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
@@ -51,28 +54,15 @@ def webhook():
         return '', 200
     return 'Error', 403
 
-# --- LÓGICA DEL BOT ---
-
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "¡Hola! Soy Nova. Mi conexión es estable y mi cerebro de IA está activo. ¿En qué puedo ayudarte?")
-
 @bot.message_handler(func=lambda message: True)
 def responder(message):
-    # Aquí es donde ocurre la magia: Nova "piensa" antes de contestar
-    respuesta_ia = obtener_respuesta_ia(message.text)
-    bot.reply_to(message, respuesta_ia)
-
-# --- INICIO ---
+    bot.send_chat_action(message.chat.id, 'typing')
+    respuesta = obtener_respuesta_ia(message.text)
+    bot.reply_to(message, respuesta)
 
 def configurar_webhook():
-    webhook_url = f"{URL_PROYECTO}/{TOKEN_TELEGRAM}"
-    try:
-        bot.remove_webhook()
-        bot.set_webhook(url=webhook_url)
-        print(f"Webhook OK: {webhook_url}")
-    except Exception as e:
-        print(f"Error Webhook: {e}")
+    bot.remove_webhook()
+    bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
 configurar_webhook()
 
