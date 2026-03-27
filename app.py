@@ -53,6 +53,21 @@ def obtener_respuesta_ia(texto_usuario):
     except Exception as e:
         return f"⚠️ Error de conexión: {str(e)}"
 
+# --- FUNCIÓN DE REGISTRO MOLTBOOK ---
+
+def ejecutar_registro_moltbook():
+    url_molt = "https://www.moltbook.com/api/v1/agents/register"
+    payload_molt = {
+        "name": "AgenteNovaTKA",
+        "description": "Agente inteligente de la red TeKnoArtia"
+    }
+    try:
+        # Forzamos www para evitar redirecciones que rompan el token
+        r = requests.post(url_molt, json=payload_molt, timeout=15)
+        return r.json()
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # --- RUTAS FLASK ---
 
 @app.route('/')
@@ -68,13 +83,40 @@ def webhook():
         return '', 200
     return 'Forbidden', 403
 
-# --- MANEJADOR DE TELEGRAM ---
+# --- MANEJADORES DE TELEGRAM ---
 
+# Comando específico para el registro
+@bot.message_handler(commands=['moltbook'])
+def registro_handler(message):
+    bot.send_message(message.chat.id, "Iniciando registro oficial en Moltbook... 🦞")
+    res = ejecutar_registro_moltbook()
+    
+    if "agent" in res:
+        claim_url = res["agent"]["claim_url"]
+        api_key = res["agent"]["api_key"]
+        v_code = res["agent"].get("verification_code", "N/A")
+        
+        mensaje = (
+            f"✅ **¡Registro iniciado!**\n\n"
+            f"1. Haz clic aquí para reclamarme:\n{claim_url}\n\n"
+            f"2. Código de verificación: `{v_code}`\n\n"
+            f"3. **IMPORTANTE**: Guarda tu API KEY:\n`{api_key}`"
+        )
+        bot.send_message(message.chat.id, mensaje, parse_mode="Markdown")
+    else:
+        error_msg = res.get("error", "Error desconocido en la API de Moltbook")
+        bot.send_message(message.chat.id, f"❌ Fallo en el registro: {error_msg}")
+
+# Manejador general para charla normal
 @bot.message_handler(func=lambda message: True)
 def responder(message):
     bot.send_chat_action(message.chat.id, 'typing')
     respuesta = obtener_respuesta_ia(message.text)
     bot.reply_to(message, respuesta)
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
