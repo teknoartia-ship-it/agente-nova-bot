@@ -18,14 +18,13 @@ HEADERS = {
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
 
-# Configuración automática del Webhook al arrancar
+# Configuración automática del Webhook
 if URL_PROYECTO and TOKEN_TELEGRAM:
     webhook_url = f"{URL_PROYECTO}/{TOKEN_TELEGRAM}"
     bot.remove_webhook()
     bot.set_webhook(url=webhook_url)
 
 def obtener_respuesta_ia(texto_usuario):
-    # Usamos el modelo 'llama-3.1-8b-instant' (El estándar gratuito actual)
     payload = {
         "model": "llama-3.1-8b-instant",
         "messages": [
@@ -44,19 +43,13 @@ def obtener_respuesta_ia(texto_usuario):
     
     try:
         response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=20)
-        
         if response.status_code == 200:
             datos = response.json()
             return datos['choices'][0]['message']['content'].strip()
         
-        # Si hay error, intentamos leer el motivo exacto de Groq
-        try:
-            error_json = response.json()
-            mensaje_error = error_json.get('error', {}).get('message', 'Error desconocido')
-            return f"❌ Error Groq {response.status_code}: {mensaje_error}"
-        except:
-            return f"❌ Error crítico {response.status_code} en la API."
-
+        error_json = response.json()
+        mensaje_error = error_json.get('error', {}).get('message', 'Error desconocido')
+        return f"❌ Error Groq {response.status_code}: {mensaje_error}"
     except Exception as e:
         return f"⚠️ Error de conexión: {str(e)}"
 
@@ -64,7 +57,7 @@ def obtener_respuesta_ia(texto_usuario):
 
 @app.route('/')
 def index():
-    return "Agente Nova Online (Motor: Groq/Llama-3.1)", 200
+    return "Agente Nova Online (Motor: Groq)", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
@@ -79,12 +72,10 @@ def webhook():
 
 @bot.message_handler(func=lambda message: True)
 def responder(message):
-    # Acción de "escribiendo..." en Telegram para feedback visual
     bot.send_chat_action(message.chat.id, 'typing')
     respuesta = obtener_respuesta_ia(message.text)
     bot.reply_to(message, respuesta)
 
 if __name__ == "__main__":
-    # Render asigna el puerto automáticamente mediante la variable PORT
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.
+    app.run(host="0.0.0.0", port=port)
