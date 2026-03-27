@@ -9,7 +9,7 @@ HF_TOKEN = os.environ.get('HF_TOKEN')
 URL_PROYECTO = os.environ.get('URL_PROYECTO')
 
 # URL DEFINITIVA PARA 2026 (Ruta directa de Inferencia)
-API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
+API_URL = API_URL = "https://api-inference.huggingface.co/models/google/gemma-2b-it"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
