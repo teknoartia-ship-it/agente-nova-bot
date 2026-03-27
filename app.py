@@ -1,14 +1,17 @@
 import os, requests, telebot
 from flask import Flask, request
 
-# Configuración
+# Variables de Render
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
-HF_TOKEN = os.environ.get('HF_TOKEN') # Usa el token 'NovaBot_Cerebro' (READ)
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 URL_PROYECTO = os.environ.get('URL_PROYECTO')
 
-# URL DIRECTA DE INFERENCIA (Evita el 404)
-API_URL = "https://api-inference.huggingface.co/models/google/gemma-2b-it"
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+# Configuración de Groq (Cerebro rápido y estable)
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
+HEADERS = {
+    "Authorization": f"Bearer {GROQ_API_KEY}",
+    "Content-Type": "application/json"
+}
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
@@ -18,31 +21,24 @@ if URL_PROYECTO and TOKEN_TELEGRAM:
     bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
 def obtener_respuesta_ia(texto_usuario):
-    # Formato Gemma
     payload = {
-        "inputs": f"<start_of_turn>user\nResponde muy breve en español: {texto_usuario}<end_of_turn>\n<start_of_turn>model\n",
-        "parameters": {"max_new_tokens": 100, "temperature": 0.7},
-        "options": {"wait_for_model": True}
+        "model": "llama3-8b-8192", 
+        "messages": [
+            {"role": "system", "content": "Eres Nova, un agente inteligente. Responde de forma muy breve y amigable en español."},
+            {"role": "user", "content": texto_usuario}
+        ],
+        "temperature": 0.6
     }
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-        
+        response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=20)
         if response.status_code == 200:
-            resultado = response.json()
-            if isinstance(resultado, list) and len(resultado) > 0:
-                texto = resultado[0].get('generated_text', '')
-                return texto.split("model\n")[-1].strip()
-            return "Sin respuesta."
-            
-        elif response.status_code == 503:
-            return "⏳ Modelo cargando... espera 15 segundos."
-        
-        return f"❌ Error {response.status_code}: API no disponible."
+            return response.json()['choices'][0]['message']['content'].strip()
+        return f"❌ Error Groq {response.status_code}. Revisa la API Key."
     except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+        return f"⚠️ Error técnico: {str(e)}"
 
 @app.route('/')
-def index(): return "OK", 200
+def index(): return "Agente Nova Online con Groq", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
