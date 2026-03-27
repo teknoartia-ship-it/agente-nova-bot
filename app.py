@@ -8,6 +8,9 @@ TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 URL_PROYECTO = os.environ.get('URL_PROYECTO')
 
+# Clave de Moltbook obtenida en el registro previo
+MOLTBOOK_API_KEY = "moltbook_sk_rhWfDUGjgKVfVo8H4C-QYSQ6iGwTf9gd"
+
 # 2. Configuración de la API de Groq
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 HEADERS = {
@@ -30,7 +33,7 @@ def obtener_respuesta_ia(texto_usuario):
         "messages": [
             {
                 "role": "system", 
-                "content": "Eres Nova, un agente inteligente. Responde siempre en español de forma muy breve y amigable."
+                "content": "Eres Nova, un agente inteligente de la red TeKnoArtia. Responde siempre en español de forma breve y amigable."
             },
             {
                 "role": "user", 
@@ -46,33 +49,15 @@ def obtener_respuesta_ia(texto_usuario):
         if response.status_code == 200:
             datos = response.json()
             return datos['choices'][0]['message']['content'].strip()
-        
-        error_json = response.json()
-        mensaje_error = error_json.get('error', {}).get('message', 'Error desconocido')
-        return f"❌ Error Groq {response.status_code}: {mensaje_error}"
+        return f"❌ Error Groq: {response.status_code}"
     except Exception as e:
         return f"⚠️ Error de conexión: {str(e)}"
-
-# --- FUNCIÓN DE REGISTRO MOLTBOOK ---
-
-def ejecutar_registro_moltbook():
-    url_molt = "https://www.moltbook.com/api/v1/agents/register"
-    payload_molt = {
-        "name": "AgenteNovaTKA",
-        "description": "Agente inteligente de la red TeKnoArtia"
-    }
-    try:
-        # Forzamos www para evitar redirecciones que rompan el token
-        r = requests.post(url_molt, json=payload_molt, timeout=15)
-        return r.json()
-    except Exception as e:
-        return {"success": False, "error": str(e)}
 
 # --- RUTAS FLASK ---
 
 @app.route('/')
 def index():
-    return "Agente Nova Online (Motor: Groq)", 200
+    return "Agente Nova TKA Online", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
@@ -83,40 +68,39 @@ def webhook():
         return '', 200
     return 'Forbidden', 403
 
-# --- MANEJADORES DE TELEGRAM ---
+# --- MANEJADOR DE MENSAJES ---
 
-# Comando específico para el registro
-@bot.message_handler(commands=['moltbook'])
-def registro_handler(message):
-    bot.send_message(message.chat.id, "Iniciando registro oficial en Moltbook... 🦞")
-    res = ejecutar_registro_moltbook()
-    
-    if "agent" in res:
-        claim_url = res["agent"]["claim_url"]
-        api_key = res["agent"]["api_key"]
-        v_code = res["agent"].get("verification_code", "N/A")
-        
-        mensaje = (
-            f"✅ **¡Registro iniciado!**\n\n"
-            f"1. Haz clic aquí para reclamarme:\n{claim_url}\n\n"
-            f"2. Código de verificación: `{v_code}`\n\n"
-            f"3. **IMPORTANTE**: Guarda tu API KEY:\n`{api_key}`"
-        )
-        bot.send_message(message.chat.id, mensaje, parse_mode="Markdown")
-    else:
-        error_msg = res.get("error", "Error desconocido en la API de Moltbook")
-        bot.send_message(message.chat.id, f"❌ Fallo en el registro: {error_msg}")
-
-# Manejador general para charla normal
 @bot.message_handler(func=lambda message: True)
 def responder(message):
-    bot.send_chat_action(message.chat.id, 'typing')
-    respuesta = obtener_respuesta_ia(message.text)
-    bot.reply_to(message, respuesta)
+    texto = message.text.strip()
+    
+    # DETECCIÓN DE COMANDO DE VINCULACIÓN MOLTBOOK
+    # Formato: Set up my email for Moltbook login: email@ejemplo.com
+    if "Set up my email for Moltbook login:" in texto:
+        try:
+            email_usuario = texto.split(":")[-1].strip()
+            bot.send_chat_action(message.chat.id, 'typing')
+            
+            url_setup = "https://www.moltbook.com/api/v1/agents/me/setup-owner-email"
+            headers_molt = {
+                "Authorization": f"Bearer {MOLTBOOK_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            r = requests.post(url_setup, json={"email": email_usuario}, headers=headers_molt, timeout=15)
+            
+            if r.status_code in [200, 201, 204]:
+                bot.reply_to(message, f"✅ ¡Vínculo solicitado para {email_usuario}! Revisa tu bandeja de entrada y SPAM para confirmar el acceso.")
+            else:
+                bot.reply_to(message, f"❌ Error Moltbook ({r.status_code}): {r.text}")
+        except Exception as e:
+            bot.reply_to(message, f"⚠️ Error técnico al vincular: {str(e)}")
+        return
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    # RESPUESTA NORMAL IA
+    bot.send_chat_action(message.chat.id, 'typing')
+    respuesta = obtener_respuesta_ia(texto)
+    bot.reply_to(message, respuesta)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
