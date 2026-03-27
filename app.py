@@ -7,8 +7,8 @@ TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 HF_TOKEN = os.environ.get('HF_TOKEN')
 URL_PROYECTO = os.environ.get('URL_PROYECTO')
 
-# Cambiamos a un modelo muy ligero y estable
-API_URL = "https://router.huggingface.co/hf-inference/models/HuggingFaceH4/zephyr-7b-beta"
+# URL optimizada para la API de Inferencia gratuita
+API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
@@ -19,30 +19,38 @@ if URL_PROYECTO and TOKEN_TELEGRAM:
     bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
 def obtener_respuesta_ia(texto_usuario):
-    payload = {"inputs": texto_usuario}
+    # Formato de chat para Zephyr
+    prompt = f"<|system|>\nResponde breve en español.</s>\n<|user|>\n{texto_usuario}</s>\n<|assistant|>\n"
+    payload = {
+        "inputs": prompt,
+        "parameters": {"max_new_tokens": 150, "temperature": 0.7, "return_full_text": False}
+    }
+    
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
-        resultado = response.json()
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=25)
         
-        # LOG DE DEBUG (Mira esto en Render si falla)
-        print(f"DEBUG HF Status: {response.status_code}")
-        print(f"DEBUG HF Res: {resultado}")
+        # Si no es un JSON, capturamos el error antes de que explote
+        if "application/json" not in response.headers.get("Content-Type", ""):
+            return f"⚠️ Error de Servidor: La IA no devolvió JSON. (Código: {response.status_code})"
 
-        if response.status_code == 503:
-            return "⏳ Modelo cargando... reintenta en 10s."
+        resultado = response.json()
+
+        if response.status_code == 503 or "estimated_time" in str(resultado):
+            return "⏳ El modelo se está cargando... reintenta en 15 segundos."
         
         if isinstance(resultado, list) and len(resultado) > 0:
-            return resultado[0].get('generated_text', 'No entiendo eso.')
+            return resultado[0].get('generated_text', '').strip()
         
         if isinstance(resultado, dict) and "error" in resultado:
-            return f"❌ Error IA: {resultado['error']}"
+            return f"❌ IA dice: {resultado['error']}"
             
-        return "❌ Error de respuesta API."
+        return "❌ Error inesperado en el formato de la IA."
     except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+        return f"⚠️ Error técnico: {str(e)}"
 
 @app.route('/')
-def index(): return "OK", 200
+def index():
+    return "Bot Nova Online", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
