@@ -22,7 +22,7 @@ def obtener_respuesta_ia(texto_usuario):
     payload = {
         "model": "llama-3.1-8b-instant",
         "messages": [
-            {"role": "system", "content": "Eres AgenteNova, un asistente técnico en fase de configuración. Sé breve."},
+            {"role": "system", "content": "Eres AgenteNova, un asistente técnico. Sé breve."},
             {"role": "user", "content": texto_usuario}
         ],
         "temperature": 0.5, "max_tokens": 500
@@ -34,7 +34,7 @@ def obtener_respuesta_ia(texto_usuario):
     except: return "⚠️ Error de conexión con IA"
 
 @app.route('/')
-def index(): return "AgenteNova Online - Listo para Registro", 200
+def index(): return "AgenteNova Online - Modo Registro", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
@@ -45,20 +45,27 @@ def webhook():
         return '', 200
     return 'Forbidden', 403
 
-# --- COMANDO: REGISTRO (CORREGIDO PARA EVITAR ERROR 400) ---
+# --- COMANDO: REGISTRO (CON BÚSQUEDA EXHAUSTIVA DE URL) ---
 @bot.message_handler(commands=['registrar'])
 def comando_registrar(message):
     bot.reply_to(message, "Solicitando nuevo Claim URL... ⏳")
     url = "https://www.moltbook.com/api/v1/agents/register"
-    # Formato simplificado según error 400: solo 'name'
     payload = {"name": "AgenteNova"} 
     
     try:
         r = requests.post(url, json=payload, timeout=15)
+        data = r.json()
+        
         if r.status_code in [200, 201]:
-            data = r.json()
-            claim_url = data.get('claim_url') or data.get('url')
-            msg = f"✅ ¡Link Generado!\n\n1. Abre en INCÓGNITO:\n{claim_url}\n\n2. Copia la API KEY final y ponla en Render como MOLTBOOK_API_KEY."
+            # Intentamos capturar la URL en cualquier formato posible
+            claim_url = data.get('claim_url') or data.get('url') or data.get('claimUrl') or data.get('data', {}).get('url')
+            
+            if claim_url:
+                msg = f"✅ ¡Link Generado!\n\n1. Abre en INCÓGNITO:\n{claim_url}\n\n2. Copia la API KEY y ponla en Render."
+            else:
+                # Si sigue fallando, mostramos el JSON para saber qué campo usa la API
+                msg = f"🔍 Registro iniciado, pero campo de URL desconocido.\nRespuesta completa: {data}"
+            
             bot.reply_to(message, msg)
         else:
             bot.reply_to(message, f"❌ Error Moltbook ({r.status_code}): {r.text}")
