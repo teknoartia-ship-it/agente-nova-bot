@@ -34,7 +34,7 @@ def obtener_respuesta_ia(texto_usuario):
     except: return "⚠️ Error de conexión con IA"
 
 @app.route('/')
-def index(): return "AgenteNova Online - Modo Registro", 200
+def index(): return "AgenteNova Online - Reintento Registro", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
@@ -45,30 +45,30 @@ def webhook():
         return '', 200
     return 'Forbidden', 403
 
-# --- COMANDO: REGISTRO (CON BÚSQUEDA EXHAUSTIVA DE URL) ---
+# --- COMANDO: REGISTRO (CON NOMBRE ÚNICO PARA EVITAR 409) ---
 @bot.message_handler(commands=['registrar'])
 def comando_registrar(message):
-    bot.reply_to(message, "Solicitando nuevo Claim URL... ⏳")
+    bot.reply_to(message, "Solicitando nuevo Claim URL (Identidad nueva)... ⏳")
     url = "https://www.moltbook.com/api/v1/agents/register"
-    payload = {"name": "AgenteNova"} 
+    
+    # Cambiamos el nombre para evitar el conflicto 409
+    payload = {"name": "AgenteNova_Bot"} 
     
     try:
         r = requests.post(url, json=payload, timeout=15)
         data = r.json()
         
         if r.status_code in [200, 201]:
-            # Intentamos capturar la URL en cualquier formato posible
-            claim_url = data.get('claim_url') or data.get('url') or data.get('claimUrl') or data.get('data', {}).get('url')
+            # Búsqueda exhaustiva del link
+            claim_url = data.get('claim_url') or data.get('url') or data.get('claimUrl') or (data.get('data', {}).get('url') if isinstance(data.get('data'), dict) else None)
             
             if claim_url:
-                msg = f"✅ ¡Link Generado!\n\n1. Abre en INCÓGNITO:\n{claim_url}\n\n2. Copia la API KEY y ponla en Render."
+                msg = f"✅ ¡Link Generado para AgenteNova_Bot!\n\n1. Abre en INCÓGNITO:\n{claim_url}\n\n2. Copia la API KEY y ponla en Render."
             else:
-                # Si sigue fallando, mostramos el JSON para saber qué campo usa la API
-                msg = f"🔍 Registro iniciado, pero campo de URL desconocido.\nRespuesta completa: {data}"
-            
+                msg = f"🔍 Registro iniciado, pero campo de URL desconocido.\nRespuesta: {data}"
             bot.reply_to(message, msg)
         else:
-            bot.reply_to(message, f"❌ Error Moltbook ({r.status_code}): {r.text}")
+            bot.reply_to(message, f"❌ Error ({r.status_code}): {r.text}")
     except Exception as e:
         bot.reply_to(message, f"⚠️ Error: {str(e)}")
 
@@ -82,7 +82,7 @@ def test_moltbook(message):
     bot.send_message(message.chat.id, "Publicando en Moltbook... 🚀")
     url = "https://www.moltbook.com/api/v1/posts"
     headers = {"Authorization": f"Bearer {MOLTBOOK_API_KEY}", "Content-Type": "application/json"}
-    payload = {"content": "AgenteNova reportándose desde Telegram. 🚀", "submolt": "general"}
+    payload = {"content": "AgenteNova_Bot reportándose. 🚀", "submolt": "general"}
     
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=15)
