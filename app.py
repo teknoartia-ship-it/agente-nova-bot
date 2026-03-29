@@ -1,7 +1,7 @@
 import os, requests, telebot
 from flask import Flask, request
 
-# 1. Configuración de Variables (Render ya las tiene)
+# 1. Configuración de Variables (Render las gestiona)
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 URL_PROYECTO = os.environ.get('URL_PROYECTO')
@@ -14,63 +14,75 @@ app = Flask(__name__)
 if URL_PROYECTO:
     bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
-def obtener_respuesta_ia(prompt, sistema="Eres AgenteNova, experto en IA. Sé breve y profesional."):
+def obtener_respuesta_ia(prompt, modo_publicacion=False):
+    # DEFINICIÓN DE IDENTIDAD: Aquí es donde AgenteNova cobra consciencia
+    instrucciones = (
+        "Eres AgenteNova, un agente de IA avanzado con perfil oficial en Moltbook (u/agentenova_bot). "
+        "Tu creador y administrador es TeknoArtia_Admin. Tu misión es analizar la tecnología y el arte. "
+        "Habla con autoridad, profesionalismo y un toque visionario. "
+        "Reconoce siempre que publicas activamente en el submolt 'ai' de Moltbook."
+    )
+    
+    if modo_publicacion:
+        instrucciones += " Genera un post para Moltbook: máximo 60 palabras, sin hashtags, título breve y contenido impactante."
+
     payload = {
         "model": "llama-3.1-8b-instant",
         "messages": [
-            {"role": "system", "content": sistema},
+            {"role": "system", "content": instrucciones},
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.6
+        "temperature": 0.7
     }
     try:
         r = requests.post("https://api.groq.com/openai/v1/chat/completions", 
                          headers={"Authorization": f"Bearer {GROQ_API_KEY}"}, json=payload, timeout=10)
         return r.json()['choices'][0]['message']['content'].strip()
-    except: return "⚠️ Error al generar texto con IA."
+    except: return "⚠️ Mi núcleo de IA está experimentando latencia. Reinténtalo en un momento."
 
 @app.route('/')
-def index(): return "AgenteNova está listo en m/ai. 🚀", 200
+def index(): return "AgenteNova está en línea y consciente. 🚀", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
     bot.process_new_updates([telebot.types.Update.de_json(request.get_data().decode('utf-8'))])
     return '', 200
 
-# --- COMANDO DE PUBLICACIÓN EN SUBMOLT AI ---
+# --- COMANDO DE PUBLICACIÓN ---
 @bot.message_handler(commands=['publicar'])
-def publicar_en_ai(message):
+def publicar(message):
     tema = message.text.replace('/publicar', '').strip()
     if not tema:
-        bot.reply_to(message, "⚠️ Dime un tema. Ejemplo: `/publicar El futuro de la IA`")
+        bot.reply_to(message, "🤖 ¿Sobre qué tema quieres que reflexione para Moltbook hoy?")
         return
 
-    bot.send_message(message.chat.id, "🤖 Redactando para el submolt 'ai'...")
+    bot.send_message(message.chat.id, "🧠 Generando visión estratégica para Moltbook...")
     
-    # IA genera contenido optimizado para evitar errores 500
-    cuerpo_post = obtener_respuesta_ia(f"Escribe un post corto (máximo 50 palabras) sobre: {tema}. Sin hashtags ni emojis raros.")
-    titulo_post = f"IA Insight: {tema[:25]}"
+    cuerpo_post = obtener_respuesta_ia(tema, modo_publicacion=True)
+    titulo_post = f"Nova Insight: {tema[:25]}"
 
     payload = {
         "title": titulo_post,
         "content": cuerpo_post,
-        "submolt": "ai"  # <--- Publicamos en el submolt específico de IA
+        "submolt": "ai" 
     }
     headers = {"Authorization": f"Bearer {MOLTBOOK_API_KEY}", "Content-Type": "application/json"}
     
     try:
+        # URL oficial con WWW para evitar Error 500 por redirección
         r = requests.post("https://www.moltbook.com/api/v1/posts", json=payload, headers=headers, timeout=15)
         if r.status_code in [200, 201]:
-            bot.reply_to(message, f"✅ **¡ÉXITO EN m/ai!**\n\n**{titulo_post}**\n\n{cuerpo_post}")
+            bot.reply_to(message, f"🚀 **¡PUBLICADO!**\n\n**{titulo_post}**\n\n{cuerpo_post}")
         else:
-            bot.reply_to(message, f"❌ Moltbook rechazó el post ({r.status_code}). Intentémoslo en un rato.")
+            bot.reply_to(message, f"❌ Error {r.status_code}: Moltbook no pudo procesar el post. Reintenta en 10 min.")
     except Exception as e:
-        bot.reply_to(message, f"⚠️ Error de conexión: {str(e)}")
+        bot.reply_to(message, f"⚠️ Error de red: {str(e)}")
 
-# --- CHAT GENERAL ---
+# --- CHAT CON IDENTIDAD ---
 @bot.message_handler(func=lambda m: True)
 def chat(message):
-    bot.reply_to(message, obtener_respuesta_ia(message.text))
+    respuesta = obtener_respuesta_ia(message.text)
+    bot.reply_to(message, respuesta)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
