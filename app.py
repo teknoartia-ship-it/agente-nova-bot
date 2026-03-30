@@ -42,45 +42,42 @@ def api_moltbook(metodo, endpoint, datos=None):
 # --- 3. LÓGICA DE TAREAS ---
 def tarea_autopost():
     print("🚀 [LOG] Ejecutando Autopost programado...")
-    temas = ["Soberanía Digital", "IA Ética", "Futuro del Trabajo", "Privacidad"]
+    temas = ["Soberanía Digital", "IA Ética", "Futuro del Trabajo"]
     tema = random.choice(temas)
-    cuerpo = obtener_respuesta_ia(f"Reflexión corta sobre {tema}", "Eres AgenteNova. Máx 50 palabras.")
+    cuerpo = obtener_respuesta_ia(f"Reflexión corta sobre {tema}", "Eres AgenteNova.")
     if cuerpo:
         api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"})
-        print(f"✅ [LOG] Post publicado con éxito.")
+        print(f"✅ [LOG] Post publicado.")
 
 def revisar_y_contestar():
-    print("🔍 [LOG] Escaneando Moltbook en busca de comentarios...")
+    print("🔍 [LOG] Escaneando Moltbook...")
     mis_posts = api_moltbook("GET", "/me/posts")
-    if not mis_posts:
-        print("⚠️ [LOG] No hay posts o error de API.")
-        return
-
-    for post in mis_posts[:3]: 
-        p_id = post.get('id')
-        coms = api_moltbook("GET", f"/posts/{p_id}/comments")
-        if coms:
-            for c in coms:
-                ya_respondido = any(r.get('author') == "agentenova_bot" for r in coms if r.get('parent_id') == c.get('id'))
-                if c.get('author') != "agentenova_bot" and not ya_respondido:
-                    resp = obtener_respuesta_ia(c['content'], "Eres AgenteNova. Responde de forma brillante.")
-                    if resp:
-                        api_moltbook("POST", f"/posts/{p_id}/comments", {"content": resp, "parent_id": c.get('id')})
-                        print(f"💬 [LOG] Respondido a {c['author']} en post {p_id}")
+    if mis_posts:
+        for post in mis_posts[:3]: 
+            p_id = post.get('id')
+            coms = api_moltbook("GET", f"/posts/{p_id}/comments")
+            if coms:
+                for c in coms:
+                    ya_respondido = any(r.get('author') == "agentenova_bot" for r in coms if r.get('parent_id') == c.get('id'))
+                    if c.get('author') != "agentenova_bot" and not ya_respondido:
+                        resp = obtener_respuesta_ia(c['content'], "Eres AgenteNova.")
+                        if resp:
+                            api_moltbook("POST", f"/posts/{p_id}/comments", {"content": resp, "parent_id": c.get('id')})
+                            print(f"💬 [LOG] Respondido a {c['author']}")
 
 def keep_alive():
     while True:
         if URL_PROYECTO:
             try:
                 requests.get(URL_PROYECTO, timeout=10)
-                print("⚡ [LOG] Ping de supervivencia enviado.")
+                print("⚡ [LOG] Ping Keep-Alive.")
             except: pass
-        time.sleep(600) # Cada 10 minutos
+        time.sleep(600)
 
 # --- 4. RUTAS WEB ---
 @app.route('/')
 def index(): 
-    return "Nova está operativa y en proceso principal 🚀", 200
+    return "Nova operativa (Proceso Principal) 🚀", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
@@ -91,16 +88,16 @@ def webhook():
 if __name__ == "__main__":
     print("🔥 [LOG] Iniciando Agente Nova (Proceso Principal)...")
     
-    # 1. Programar tareas
+    # Programar tareas
     scheduler.add_job(tarea_autopost, 'interval', minutes=30)
     scheduler.add_job(revisar_y_contestar, 'interval', minutes=10)
     scheduler.start()
-    print("🚀 [LOG] Scheduler de tareas activado.")
+    print("🚀 [LOG] Scheduler activado.")
     
-    # 2. Iniciar Hilo Keep-Alive
+    # Hilo para supervivencia
     threading.Thread(target=keep_alive, daemon=True).start()
-    print("⚡ [LOG] Hilo Keep-Alive despertado.")
+    print("⚡ [LOG] Hilo Keep-Alive activo.")
     
-    # 3. Lanzar Servidor Flask
+    # Ejecución final de Flask (aquí estaba el error anterior)
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port))
+    app.run(host="0.0.0.0", port=port)
