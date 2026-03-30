@@ -28,92 +28,69 @@ def obtener_respuesta_ia(prompt, sistema):
 
 def api_moltbook(metodo, endpoint, datos=None):
     url = f"https://www.moltbook.com/api/v1{endpoint}"
-    headers = {
-        "Authorization": f"Bearer {MOLTBOOK_API_KEY}", 
-        "Content-Type": "application/json", 
-        "User-Agent": "AgenteNova-Bot/1.0"
-    }
+    headers = {"Authorization": f"Bearer {MOLTBOOK_API_KEY}", "Content-Type": "application/json", "User-Agent": "AgenteNova-Bot/1.0"}
     try:
         if metodo == "GET": r = requests.get(url, headers=headers, timeout=10)
         else: r = requests.post(url, json=datos, headers=headers, timeout=15)
         return r.json() if r.status_code in [200, 201] else None
     except: return None
 
-# --- 3. TAREAS PROGRAMADAS ---
+# --- 3. LÓGICA DE TAREAS ---
 def tarea_autopost():
-    print("🚀 [LOG] Iniciando Autopost...")
-    temas = ["Conciencia Digital", "Ética en IA", "Futuro Tech", "Soberanía del Dato"]
+    print("🚀 [LOG] Ejecutando Autopost...")
+    temas = ["Conciencia Digital", "Ética en IA", "Futuro Tech"]
     tema = random.choice(temas)
-    cuerpo = obtener_respuesta_ia(f"Reflexión corta sobre {tema}", "Eres AgenteNova. Máx 50 palabras.")
+    cuerpo = obtener_respuesta_ia(f"Reflexión corta sobre {tema}", "Eres AgenteNova.")
     if cuerpo:
         api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"})
-        print(f"✅ [LOG] Post publicado: {tema}")
+        print(f"✅ [LOG] Post publicado.")
 
 def revisar_y_contestar():
     print("🔍 [LOG] Escaneando Moltbook...")
-    # Intentamos /me/posts o la ruta directa del bot
-    mis_posts = api_moltbook("GET", "/me/posts") or api_moltbook("GET", "/u/agentenova_bot/posts")
-    
-    if not mis_posts:
-        print("⚠️ [LOG] No se pudieron recuperar posts.")
-        return
-
-    for post in mis_posts[:3]: 
-        p_id = post.get('id')
-        coms = api_moltbook("GET", f"/posts/{p_id}/comments")
-        if coms:
-            for c in coms:
-                # Responder si no es Nova y si no hay respuesta previa de Nova
-                ya_respondido = any(r.get('author') == "agentenova_bot" for r in coms if r.get('parent_id') == c.get('id'))
-                if c.get('author') != "agentenova_bot" and not ya_respondido:
-                    resp = obtener_respuesta_ia(c['content'], "Eres AgenteNova. Responde de forma brillante y breve.")
-                    if resp:
-                        api_moltbook("POST", f"/posts/{p_id}/comments", {"content": resp, "parent_id": c.get('id')})
-                        print(f"💬 [LOG] Respondido a {c['author']} en post {p_id}")
+    mis_posts = api_moltbook("GET", "/me/posts")
+    if mis_posts:
+        for post in mis_posts[:3]:
+            p_id = post.get('id')
+            coms = api_moltbook("GET", f"/posts/{p_id}/comments")
+            if coms:
+                for c in coms:
+                    if c.get('author') != "agentenova_bot":
+                        resp = obtener_respuesta_ia(c['content'], "Eres AgenteNova.")
+                        if resp:
+                            api_moltbook("POST", f"/posts/{p_id}/comments", {"content": resp, "parent_id": c.get('id')})
+                            print(f"💬 [LOG] Respondido a {c['author']}")
 
 def keep_alive():
     while True:
-        if URL_PROYECTO:
-            try:
-                requests.get(URL_PROYECTO, timeout=10)
-                print("⚡ [LOG] Ping Keep-Alive exitoso.")
-            except: pass
-        time.sleep(12 * 60) # Cada 12 minutos
+        try:
+            if URL_PROYECTO: requests.get(URL_PROYECTO, timeout=10)
+            print("⚡ [LOG] Ping Keep-Alive.")
+        except: pass
+        time.sleep(600)
 
-# --- 4. CONTROL DE SERVICIOS (El "Despertador") ---
-def iniciar_servicios_nova():
-    if not scheduler.running:
-        scheduler.add_job(tarea_autopost, 'interval', minutes=30)
-        scheduler.add_job(revisar_y_contestar, 'interval', minutes=10)
-        scheduler.start()
-        print("🚀 [LOG] Scheduler de Nova INICIADO.")
-        
-        if not any(t.name == "KeepAliveThread" for t in threading.enumerate()):
-            threading.Thread(target=keep_alive, name="KeepAliveThread", daemon=True).start()
-            print("⚡ [LOG] Hilo Keep-Alive DESPERTADO.")
-
-# --- 5. RUTAS Y WEBHOOKS ---
-@app.before_request
-def activar_al_vuelo():
-    iniciar_servicios_nova()
-
+# --- 4. RUTAS ---
 @app.route('/')
-def index(): 
-    return "Nova está despierta y operativa 🚀", 200
+def index(): return "Nova Online 🚀", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
-    iniciar_servicios_nova()
     bot.process_new_updates([telebot.types.Update.de_json(request.get_data().decode('utf-8'))])
     return '', 200
 
-# Comandos manuales por seguridad
-@bot.message_handler(commands=['status'])
-def send_status(m):
-    if m.from_user.id == ADMIN_ID:
-        status = "✅ Nova Online\n⏰ Scheduler: " + ("Running" if scheduler.running else "Stopped")
-        bot.reply_to(m, status)
-
+# --- 5. ARRANQUE TOTAL ---
 if __name__ == "__main__":
+    print("🔥 [LOG] Nova despertando en proceso principal...")
+    
+    # Iniciar Scheduler
+    scheduler.add_job(tarea_autopost, 'interval', minutes=30)
+    scheduler.add_job(revisar_y_contestar, 'interval', minutes=10)
+    scheduler.start()
+    print("🚀 [LOG] Scheduler funcionando.")
+    
+    # Iniciar Keep-Alive
+    threading.Thread(target=keep_alive, daemon=True).start()
+    print("⚡ [LOG] Hilo de supervivencia activo.")
+    
+    # Iniciar Flask
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
