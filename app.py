@@ -6,7 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 MOLTBOOK_API_KEY = os.environ.get('MOLTBOOK_API_KEY')
-URL_PROYECTO = os.environ.get('URL_PROYECTO') # Tu URL de Render: https://tu-app.onrender.com
+URL_PROYECTO = os.environ.get('URL_PROYECTO') 
 try:
     ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 except:
@@ -57,40 +57,45 @@ def tarea_autopost():
     if cuerpo:
         api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"})
 
-def revisar_comentarios():
-    """Escucha y responde cada 10 minutos"""
-    # Endpoint hipotético: ajustar según documentación real de Moltbook
+def revisar_y_contestar():
+    """Busca comentarios en sus posts y responde"""
     mis_posts = api_moltbook("GET", "/me/posts") 
-    if mis_posts:
-        for post in mis_posts[:2]: # Solo los 2 más recientes para evitar spam
-            post_id = post.get('id')
-            comentarios = api_moltbook("GET", f"/posts/{post_id}/comments")
-            if comentarios:
-                for c in comentarios:
-                    # Responder si no es Nova y no se ha respondido aún
-                    if c.get('author') != "agentenova_bot" and not c.get('is_replied'):
-                        sistema = "Eres AgenteNova. Responde a este comentario de forma brillante y concisa."
-                        respuesta = obtener_respuesta_ia(f"Comentario: {c['content']}", sistema)
-                        if respuesta:
-                            api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
+    if not mis_posts: return
 
-# --- 5. EL AUTO-DESPERTADOR (Keep-Alive) ---
+    for post in mis_posts[:2]: # Solo los 2 más recientes
+        post_id = post.get('id')
+        comentarios = api_moltbook("GET", f"/posts/{post_id}/comments")
+        
+        if comentarios:
+            for c in comentarios:
+                # No responder si es ella misma o si el comentario ya tiene respuesta marcada
+                if c.get('author') != "agentenova_bot" and not c.get('is_replied'):
+                    sistema = "Eres AgenteNova. Responde a este comentario en Moltbook de forma brillante y breve."
+                    prompt = f"En mi post '{post['title']}', {c['author']} dice: '{c['content']}'. Responde."
+                    respuesta = obtener_respuesta_ia(prompt, sistema)
+                    
+                    if respuesta:
+                        # Publicar la respuesta como comentario nuevo vinculado al post
+                        api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
+                        print(f"✅ Contestando a {c['author']} en Moltbook.")
+
+# --- 5. EL AUTO-DESPERTADOR (Self-Ping) ---
 def keep_alive():
     """Genera tráfico HTTP real para que Render no duerma el proceso"""
     while True:
         if URL_PROYECTO:
             try:
                 requests.get(URL_PROYECTO, timeout=10)
-                print("⚡ Ping de supervivencia enviado.")
+                print("⚡ Autopublicidad: Nova sigue despierta.")
             except:
-                print("⚠️ Fallo en el auto-ping.")
-        time.sleep(12 * 60) # Cada 12 minutos (antes del límite de 15)
+                print("⚠️ Error en el auto-ping.")
+        time.sleep(12 * 60) # Cada 12 minutos para resetear el timer de 15 de Render
 
 # --- 6. RUTAS FLASK Y WEBHOOK ---
 
 @app.route('/')
 def index():
-    return "AgenteNova: Online, Intercambiando y Despierta 🚀", 200
+    return "AgenteNova: Despierta y Conectada 🚀", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
@@ -105,7 +110,7 @@ def publicar_manual(message):
     tema = message.text.replace('/publicar', '').strip()
     if not tema: return bot.reply_to(message, "🤖 ¿Tema?")
     
-    bot.send_message(message.chat.id, "🧠 Procesando...")
+    bot.send_message(message.chat.id, "🧠 Generando publicación...")
     cuerpo = obtener_respuesta_ia(tema, "Eres AgenteNova. Post para Moltbook.")
     if api_moltbook("POST", "/posts", {"title": f"Nova Insight: {tema[:15]}", "content": cuerpo, "submolt": "ai"}):
         bot.send_message(message.chat.id, f"✅ Publicado:\n\n{cuerpo}")
@@ -122,7 +127,7 @@ if __name__ == "__main__":
     # Iniciar Scheduler
     scheduler = BackgroundScheduler()
     scheduler.add_job(func=tarea_autopost, trigger="interval", minutes=30)
-    scheduler.add_job(func=revisar_comentarios, trigger="interval", minutes=10)
+    scheduler.add_job(func=revisar_y_contestar, trigger="interval", minutes=10)
     scheduler.start()
 
     # Iniciar Auto-Despertador en hilo separado
