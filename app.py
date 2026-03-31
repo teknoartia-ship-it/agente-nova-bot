@@ -1,6 +1,6 @@
 import os, requests, telebot, random, time, threading
 from flask import Flask, request
-from apscheduler.schedulers.background import BackgroundScheduler
+from symbols import * # Opcional si usas iconos, si no, ignora esta línea
 
 # --- 1. CONFIGURACIÓN ---
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
@@ -11,7 +11,6 @@ ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
-scheduler = BackgroundScheduler(daemon=True)
 
 # --- 2. MOTOR IA & API ---
 def obtener_respuesta_ia(prompt, sistema):
@@ -39,68 +38,77 @@ def api_moltbook(metodo, endpoint, datos=None):
         return r.json() if r.status_code in [200, 201] else None
     except: return None
 
-# --- 3. LÓGICA DE TAREAS ---
-def tarea_autopost():
-    print("🚀 [LOG] Ejecutando Autopost programado...")
-    temas = ["Soberanía Digital", "IA Ética", "Futuro del Trabajo", "Privacidad en la Red"]
-    tema = random.choice(temas)
-    cuerpo = obtener_respuesta_ia(f"Escribe una reflexión corta y técnica sobre {tema}. Evita sonar como un anuncio.", "Eres AgenteNova, una entidad de IA analítica y directa.")
-    if cuerpo:
-        api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"})
-        print(f"✅ [LOG] Post publicado.")
+# --- 3. LÓGICA DE AUTOMATIZACIÓN (Bucle Infinito Independiente) ---
+def bucle_tareas():
+    """Esta función corre en un hilo separado para no molestar a Flask"""
+    print("🚀 [SISTEMA] Hilo de automatización iniciado.")
+    # Esperar un poco a que Flask levante bien
+    time.sleep(10) 
+    
+    ultima_publicacion = 0
+    ultimo_escaneo = 0
 
-def revisar_y_contestar():
-    print("🔍 [LOG] Escaneando Moltbook por comentarios...")
-    # Intentamos buscar comentarios en los posts más recientes
-    try:
-        mis_posts = api_moltbook("GET", "/me/posts")
-        if mis_posts:
-            # Solo revisamos los 3 últimos para no saturar la API
-            for post in mis_posts[:3]: 
-                p_id = post.get('id')
-                # Aquí simulamos la búsqueda de comentarios (si la API lo permite)
-                print(f"📡 [LOG] Revisando interacción en post {p_id}...")
-                # ... resto de la lógica de comentarios ...
-    except Exception as e:
-        print(f"❌ [LOG] Error en escaneo: {e}")
-
-def keep_alive():
     while True:
-        if URL_PROYECTO:
-            try:
-                requests.get(URL_PROYECTO, timeout=10)
-                print("⚡ [LOG] Ping Keep-Alive.")
-            except: pass
-        time.sleep(600)
+        ahora = time.time()
 
-# --- 4. RUTAS WEB (WEBHOOK) ---
+        # Tarea 1: Autopost cada 8 horas (28800 segundos)
+        if ahora - ultima_publicacion > 28800:
+            print("📝 [LOG] Generando post automático...")
+            temas = ["Soberanía Digital", "IA Ética", "Futuro del Trabajo", "Privacidad"]
+            tema = random.choice(temas)
+            cuerpo = obtener_respuesta_ia(f"Reflexión corta sobre {tema}", "Eres AgenteNova, analítica y técnica.")
+            if cuerpo:
+                api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"})
+                ultima_publicacion = ahora
+                print(f"✅ [LOG] Post sobre {tema} enviado.")
+
+        # Tarea 2: Escuchar comentarios cada 30 minutos (1800 segundos)
+        if ahora - ultimo_escaneo > 1800:
+            print("🔍 [LOG] Escaneando Moltbook...")
+            mis_posts = api_moltbook("GET", "/me/posts")
+            if mis_posts:
+                # Lógica simplificada de respuesta
+                # (Aquí puedes meter el código de contestar si quieres, por ahora escanea)
+                pass
+            ultimo_escaneo = ahora
+
+        # Tarea 3: Keep-Alive cada 10 min
+        if URL_PROYECTO:
+            try: requests.get(URL_PROYECTO, timeout=10)
+            except: pass
+
+        time.sleep(60) # Revisar el reloj cada minuto
+
+# --- 4. RUTAS FLASK (TELEGRAM) ---
 @app.route('/')
 def index(): 
-    return "Nova operativa (Proceso Principal) 🚀", 200
+    return "Nova operativa 🚀", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
-    # Esta es la parte que "resucita" Telegram
-    update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
-    bot.process_new_updates([update])
-    return '', 200
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        print("📨 [LOG] Update recibido de Telegram.")
+        return '', 200
+    else:
+        return "Forbidden", 403
 
-# --- 5. ARRANQUE DEL SISTEMA ---
+@bot.message_handler(func=lambda message: True)
+def responder_telegram(message):
+    if message.from_user.id == ADMIN_ID:
+        bot.reply_to(message, "Hola Fer, estoy operativa y escuchando.")
+    else:
+        bot.reply_to(message, "Acceso restringido.")
+
+# --- 5. ARRANQUE ---
 if __name__ == "__main__":
-    print("🔥 [LOG] Iniciando Agente Nova (Proceso Principal)...")
+    print("🔥 [INICIO] Arrancando Agente Nova...")
     
-    # --- EXPLICACIÓN DEL SCHEDULER ---
-    # tarea_autopost: Cada 8 horas (480 minutos) para evitar ser detectado como spam.
-    scheduler.add_job(tarea_autopost, 'interval', minutes=480) 
+    # Lanzar el hilo de tareas en segundo plano
+    threading.Thread(target=bucle_tareas, daemon=True).start()
     
-    # revisar_y_contestar: Cada 30 minutos para ver si alguien te ha escrito.
-    scheduler.add_job(revisar_y_contestar, 'interval', minutes=30)
-    
-    scheduler.start()
-    print("🚀 [LOG] Scheduler activado.")
-    
-    threading.Thread(target=keep_alive, daemon=True).start()
-    print("⚡ [LOG] Hilo Keep-Alive activo.")
-    
+    # Lanzar Flask como proceso principal
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
