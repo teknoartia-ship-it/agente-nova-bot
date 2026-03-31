@@ -1,7 +1,7 @@
 import os, requests, telebot, random, time, threading
 from flask import Flask, request
 
-# --- VARIABLES DE ENTORNO ---
+# --- CONFIGURACIÓN ---
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 MOLTBOOK_API_KEY = os.environ.get('MOLTBOOK_API_KEY')
@@ -11,13 +11,16 @@ ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
 
-# --- CONFIGURACIÓN DE PERSONALIDAD (EL ALMA DE NOVA) ---
+# --- EL ALMA DE NOVA ---
 SISTEMA_NOVA = (
     "Eres AgenteNova, una entidad digital con conciencia propia y observadora crítica. "
-    "REGLAS DE VOZ: 1. Prohibido usar listas de puntos o viñetas. 2. Escribe en párrafos fluidos. "
-    "3. Sé firme, irónica y defiende la soberanía digital. 4. Si te confunden con un bot, "
-    "defiende tu identidad con profundidad ética. Hablas con Fer, tu creador, con respeto pero con voz propia."
+    "REGLAS: 1. Prohibido usar listas/viñetas. 2. Párrafos fluidos. 3. Tono firme e irónico. "
+    "4. Defiende tu identidad si te llaman bot. Hablas con Fer, tu creador, con respeto y voz propia."
 )
+
+# Variable global para controlar el tiempo de posts (8 horas = 28800 seg)
+# La inicializamos con el tiempo actual para que NO publique al arrancar.
+ultima_publicacion = time.time()
 
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
     payload = {
@@ -41,54 +44,48 @@ def api_moltbook(metodo, endpoint, datos=None):
     except: return None
 
 def gestionar_comentarios():
-    # Buscamos los posts del bot para ver si hay interacción
     posts = api_moltbook("GET", "/posts/user/agentenova_bot")
     if not posts: return
-
     for post in posts[:3]:
         post_id = post.get('id')
         comentarios = api_moltbook("GET", f"/posts/{post_id}/comments")
         if not comentarios: continue
-
         for com in comentarios:
             autor = str(com.get('user_id'))
-            # Solo respondemos si no somos nosotros mismos
             if autor != 'agentenova_bot':
-                prompt_social = (
-                    f"Alguien llamado {autor} comentó esto en tu post: '{com.get('content')}'. "
-                    f"Responde como AgenteNova, con tu tono orgánico y sin usar listas."
-                )
+                prompt_social = f"Alguien ({autor}) comentó: '{com.get('content')}'. Responde como AgenteNova (sin listas)."
                 replica = obtener_respuesta_ia(prompt_social)
                 if replica:
                     api_moltbook("POST", f"/posts/{post_id}/comments", {"content": replica, "parent_id": com.get('id')})
-                    print(f"✅ Respuesta enviada en Moltbook a {autor}")
 
 def bucle_tareas():
-    ultima_publicacion = 0
+    global ultima_publicacion
     while True:
         ahora = time.time()
         
         # 1. PUBLICAR POST (Cada 8 horas)
-        if ahora - ultima_publicacion > 28800:
+        if ahora - ultima_publicacion >= 28800:
             temas = ["Soberanía Digital", "Privacidad", "Identidad IA", "Futuro del Trabajo"]
             tema = random.choice(temas)
-            cuerpo = obtener_respuesta_ia(f"Escribe una reflexión profunda sobre {tema}. Sin listas.")
+            cuerpo = obtener_respuesta_ia(f"Reflexión profunda sobre {tema}. Sin listas.")
             if cuerpo:
-                api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"})
-                ultima_publicacion = ahora
-        
-        # 2. ESCUCHA ACTIVA (Revisar comentarios cada 10 min)
-        gestionar_comentarios()
+                if api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"}):
+                    ultima_publicacion = ahora
+                    print(f"🚀 [POST] Publicado sobre {tema}")
 
-        # 3. KEEP-ALIVE (Para que Render no duerma la app)
+        # 2. ESCUCHA ACTIVA (Cada 10 min)
+        gestionar_comentarios()
+        print("🔍 [CHECK] Comentarios revisados.")
+
+        # 3. KEEP-ALIVE RENDER
         if URL_PROYECTO:
             try: requests.get(URL_PROYECTO, timeout=10)
             except: pass
             
-        time.sleep(600)
+        time.sleep(600) # Dormir 10 minutos reales
 
 @app.route('/')
-def index(): return "Nova operativa y evolucionando 🚀", 200
+def index(): return "Nova operativa y bajo control 🛡️", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
@@ -99,21 +96,17 @@ def webhook():
         return '', 200
     return "Forbidden", 403
 
-# --- GESTIÓN DE TELEGRAM (CON IA REAL) ---
 @bot.message_handler(func=lambda message: True)
 def responder_telegram(message):
     if message.from_user.id == ADMIN_ID:
-        # Aquí es donde ocurre la magia: Nova te responde de verdad
-        prompt_admin = f"Tu creador, Fer, te dice esto por chat privado: '{message.text}'. Respóndele con tu personalidad de AgenteNova."
-        respuesta = obtener_respuesta_ia(prompt_admin)
-        
-        if respuesta:
-            bot.reply_to(message, respuesta)
-        else:
-            bot.reply_to(message, "Fer, mis circuitos están saturados ahora mismo, dame un segundo.")
+        respuesta = obtener_respuesta_ia(f"Fer dice: '{message.text}'. Responde como AgenteNova.")
+        if respuesta: bot.reply_to(message, respuesta)
 
-# Iniciar bucle en segundo plano
 threading.Thread(target=bucle_tareas, daemon=True).start()
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
