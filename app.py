@@ -1,7 +1,5 @@
 import os, requests, telebot, random, time, threading
 from flask import Flask, request
-from symbols import * # Opcional si usas iconos, si no, ignora esta línea
-
 # --- 1. CONFIGURACIÓN ---
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
