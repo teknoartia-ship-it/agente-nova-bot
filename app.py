@@ -52,7 +52,7 @@ def api_moltbook(metodo, endpoint, datos=None):
         return None
 
 def gestionar_comentarios():
-    posts = api_moltbook("GET", "/posts/user/agentenova_bot")
+    posts = api_moltbook("GET", "/posts/me")
     if not posts: 
         print("📭 [LOG] No se encontraron posts para agentenova_bot")
         return
