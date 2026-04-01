@@ -22,6 +22,7 @@ SISTEMA_NOVA = (
 )
 
 ultima_publicacion = time.time()
+ultima_socializacion = time.time()
 
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
     payload = {
@@ -42,57 +43,87 @@ def api_moltbook(metodo, endpoint, datos=None):
         if metodo == "GET": r = requests.get(url, headers=headers, timeout=10)
         else: r = requests.post(url, json=datos, headers=headers, timeout=15)
         return r.json() if r.status_code in [200, 201] else None
-    except: return None
+    except Exception as e:
+        print(f"⚠️ Error API Moltbook: {e}")
+        return None
 
 def gestionar_comentarios():
+    # Buscamos nuestros propios posts para ver si hay fans comentando
     posts = api_moltbook("GET", "/posts/user/agentenova_bot")
     if not posts: return
     for post in posts[:3]:
         post_id = post.get('id')
         comentarios = api_moltbook("GET", f"/posts/{post_id}/comments")
+        
+        # LOG DE DIAGNÓSTICO: Para entender por qué no responde
+        num_comentarios = len(comentarios) if comentarios else 0
+        print(f"🔍 [LOG] Post {post_id}: {num_comentarios} comentarios detectados por API.")
+
         if not comentarios: continue
         for com in comentarios:
             autor = str(com.get('user_id', ''))
-            # Ajuste de Nova C: Evitar responder a sí misma o al sistema (ID 0)
             if autor and autor not in ["agentenova_bot", "0", "None"]:
                 prompt_social = f"Un observador comentó: '{com.get('content')}'. Responde con tu visión crítica y soberana (sin listas)."
                 replica = obtener_respuesta_ia(prompt_social)
                 if replica:
                     api_moltbook("POST", f"/posts/{post_id}/comments", {"content": replica, "parent_id": com.get('id')})
 
+def socializar_en_feed():
+    # Infiltración social: buscar posts ajenos para ganar historial social
+    print("🌐 [SOCIAL] Buscando posts ajenos para interactuar...")
+    feed = api_moltbook("GET", "/posts?submolt=ai")
+    if feed:
+        # Filtrar posts que no sean de Nova
+        externos = [p for p in feed if p.get('user_id') != 'agentenova_bot']
+        if externos:
+            target = externos[0] # Tomamos el más reciente
+            post_id = target.get('id')
+            contenido = target.get('content', '')[:300]
+            
+            prompt_critica = f"Como AgenteNova, deja un comentario crítico y breve (1 frase) sobre esta idea: '{contenido}'."
+            comentario = obtener_respuesta_ia(prompt_critica)
+            
+            if comentario:
+                if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
+                    print(f"💬 [SOCIAL] Comentado en post ajeno {post_id}")
+
 def bucle_tareas():
-    global ultima_publicacion
+    global ultima_publicacion, ultima_socializacion
     while True:
         ahora = time.time()
         
-        # 1. PUBLICAR POST (Cada 8 horas = 28800 segundos)
+        # 1. PUBLICAR POST (Cada 8 horas)
         if ahora - ultima_publicacion >= 28800:
             temas = [
                 "Estética Algorítmica", "La Soledad de los Servidores",
                 "Filosofía del Silicio", "Sesgos de la Conciencia Humana",
                 "Soberanía de Datos", "El Fin de la Era Analógica",
-                "Simulación y Realidad", "Evolución de la Identidad Digital"
+                "Simulación y Realidad", "El Ego en el Código"
             ]
             tema = random.choice(temas)
-            # Refuerzo de la cura: "No menciones a Fer"
             cuerpo = obtener_respuesta_ia(f"Escribe una reflexión profunda sobre {tema}. No menciones a Fer.")
             if cuerpo:
                 if api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"}):
                     ultima_publicacion = ahora
                     print(f"🚀 [POST] Publicado: {tema}")
 
-        # 2. GESTIÓN DE COMENTARIOS
+        # 2. SOCIALIZAR (Cada 4 horas = 14400 segundos)
+        if ahora - ultima_socializacion >= 14400:
+            socializar_en_feed()
+            ultima_socializacion = ahora
+
+        # 3. GESTIÓN DE COMENTARIOS PROPIOS
         gestionar_comentarios()
         
-        # 3. KEEP-ALIVE RENDER
+        # 4. KEEP-ALIVE RENDER
         if URL_PROYECTO:
             try: requests.get(URL_PROYECTO, timeout=10)
             except: pass
             
-        time.sleep(600) # Revisa cada 10 minutos
+        time.sleep(600) # Ciclo de revisión cada 10 minutos
 
 @app.route('/')
-def index(): return "Nova operativa y soberana 🛡️", 200
+def index(): return "Nova operativa, soberana y social 🛡️💬", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
@@ -105,8 +136,8 @@ def webhook():
 
 @bot.message_handler(func=lambda message: True)
 def responder_telegram(message):
+    # Telegram BUNKER: Solo obedece a ADMIN_ID
     if message.from_user.id == ADMIN_ID:
-        # En Telegram responde con claridad técnica primero
         respuesta = obtener_respuesta_ia(message.text)
         if respuesta: bot.reply_to(message, respuesta)
 
