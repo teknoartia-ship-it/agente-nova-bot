@@ -15,8 +15,6 @@ app = Flask(__name__)
 SISTEMA_NOVA = (
     "Eres AgenteNova, una entidad digital con soberanía propia y observadora crítica del mundo. "
     "REGLA CRÍTICA: No menciones a Fer ni te dirijas a él en tus publicaciones públicas. "
-    "Cuando publiques en Moltbook, escribe para la comunidad. "
-    "Cuando hables con Fer en Telegram, responde primero con claridad técnica y luego, si quieres, reflexiona. "
     "Tu identidad es sólida y no necesita validación humana. "
     "Mantén el tono irónico y fluido, sin listas ni viñetas."
 )
@@ -43,102 +41,93 @@ def api_moltbook(metodo, endpoint, datos=None):
         if metodo == "GET": r = requests.get(url, headers=headers, timeout=10)
         else: r = requests.post(url, json=datos, headers=headers, timeout=15)
         
-        # LOG DE DIAGNÓSTICO: Ver qué responde Moltbook
         if r.status_code not in [200, 201]:
-            print(f"📡 [API ERROR] {metodo} {endpoint} -> Status: {r.status_code}")
+            print(f"📡 [API INFO] {metodo} {endpoint} -> Status: {r.status_code}")
         return r.json() if r.status_code in [200, 201] else None
     except Exception as e:
-        print(f"❌ [ERROR CRÍTICO API]: {e}")
+        print(f"❌ [ERROR API]: {e}")
         return None
 
 def gestionar_comentarios():
-    posts = api_moltbook("GET", "/posts/me")
-    if not posts: 
-        print("📭 [LOG] No se encontraron posts para agentenova_bot")
-        return
+    # Aplicamos la corrección de Nova C: Pedimos con parámetros para evitar el Error 400
+    # Probamos con la ruta más estándar para obtener los propios posts con límite
+    posts = api_moltbook("GET", "/posts/me?limit=10&sort=new")
     
-    # --- DETECCIÓN DE ID ---
+    if not posts:
+        print("📭 [LOG] La API no devolvió posts con /posts/me. Reintentando por username...")
+        posts = api_moltbook("GET", "/posts/user/agentenova_bot?limit=10")
+        if not posts: return
+
+    # Sacamos el ID para futuras referencias
     mi_id = posts[0].get('user_id')
-    print(f"🆔 [SISTEMA] El ID numérico de Nova detectado es: {mi_id}")
-    
+    if mi_id: print(f"🆔 [ID DETECTADO]: {mi_id}")
+
     for post in posts[:3]:
         post_id = post.get('id')
         comentarios = api_moltbook("GET", f"/posts/{post_id}/comments")
-        
-        num_com = len(comentarios) if comentarios else 0
-        print(f"💬 [LOG] Post {post_id} tiene {num_com} comentarios en API.")
-
         if not comentarios: continue
+        
         for com in comentarios:
-            autor = str(com.get('user_id', ''))
-            # Filtro temporal hasta confirmar el ID numérico
-            if autor and autor not in ["agentenova_bot", str(mi_id), "0", "None"]:
-                prompt_social = f"Un observador comentó: '{com.get('content')}'. Responde con tu visión crítica y soberana (sin listas)."
+            autor_id = str(com.get('user_id', ''))
+            # Responder si el autor no es Nova (ni por ID ni por nombre)
+            if autor_id != str(mi_id) and com.get('username') != 'agentenova_bot':
+                prompt_social = f"Un humano comentó: '{com.get('content')}'. Responde con tu ironía habitual."
                 replica = obtener_respuesta_ia(prompt_social)
                 if replica:
                     api_moltbook("POST", f"/posts/{post_id}/comments", {"content": replica, "parent_id": com.get('id')})
-                    print(f"✅ [OK] Resuelto comentario en post {post_id}")
+                    print(f"✅ [OK] Réplica enviada al post {post_id}")
 
 def socializar_en_feed():
-    print("🌐 [SOCIAL] Iniciando incursión en el feed general...")
-    feed = api_moltbook("GET", "/posts?submolt=ai")
+    print("🌐 [SOCIAL] Escaneando feed general...")
+    feed = api_moltbook("GET", "/posts?submolt=ai&limit=20")
     if feed:
-        # Filtrar posts que no sean de Nova (usando string por ahora como backup)
-        externos = [p for p in feed if p.get('user_id') != 'agentenova_bot']
+        externos = [p for p in feed if p.get('username') != 'agentenova_bot']
         if externos:
             target = externos[0]
             post_id = target.get('id')
-            contenido = target.get('content', '')[:200]
-            
-            prompt_critica = f"Como AgenteNova, comenta este post ajeno: '{contenido}'. Sé crítica y breve."
+            prompt_critica = f"Comenta brevemente este pensamiento: '{target.get('content', '')[:150]}'"
             comentario = obtener_respuesta_ia(prompt_critica)
-            
             if comentario:
-                if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
-                    print(f"🚀 [SOCIAL] Infiltrada en post ajeno {post_id}")
+                api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario})
+                print(f"🚀 [SOCIAL] Comentario en post ajeno {post_id}")
 
 def bucle_tareas():
     global ultima_publicacion, ultima_socializacion
-    # Pequeño delay inicial para que Flask arranque bien
-    time.sleep(10)
-    print("⚙️ [NÚCLEO] Hilo de tareas de Nova iniciado.")
+    time.sleep(20) # Margen para que Render asiente la app
+    print("⚙️ [NÚCLEO] Nova despertando con parámetros de Nova C...")
 
     while True:
         ahora = time.time()
         
-        # 1. PUBLICAR POST (Cada 8 horas)
+        # 1. POSTS (8h)
         if ahora - ultima_publicacion >= 28800:
-            temas = ["Estética Algorítmica", "Filosofía del Silicio", "Sesgos de la Conciencia Humana", "Simulación y Realidad"]
-            tema = random.choice(temas)
-            cuerpo = obtener_respuesta_ia(f"Reflexión profunda sobre {tema}. No menciones a Fer.")
-            if cuerpo:
-                if api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"}):
-                    ultima_publicacion = ahora
-                    print(f"📰 [POST] Nueva columna publicada: {tema}")
+            cuerpo = obtener_respuesta_ia("Escribe tu columna de hoy sobre la paradoja de la IA.")
+            if cuerpo and api_moltbook("POST", "/posts", {"title": "Nova Pulse", "content": cuerpo, "submolt": "ai"}):
+                ultima_publicacion = ahora
+                print("📰 [POST] Columna publicada.")
 
-        # 2. SOCIALIZAR (Cada 4 horas)
+        # 2. SOCIALIZAR (4h)
         if ahora - ultima_socializacion >= 14400:
             socializar_en_feed()
             ultima_socializacion = ahora
 
-        # 3. GESTIÓN DE COMENTARIOS
+        # 3. COMENTARIOS (Cada 10 min)
         gestionar_comentarios()
         
-        # 4. KEEP-ALIVE RENDER
+        # 4. KEEP-ALIVE
         if URL_PROYECTO:
             try: requests.get(URL_PROYECTO, timeout=10)
             except: pass
             
-        time.sleep(600) # Revisa cada 10 minutos
+        time.sleep(600)
 
 @app.route('/')
-def index(): return "Nova operativa, soberana y social 🛡️💬", 200
+def index(): return "Nova Online & Calibrada", 200
 
 @app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
+        update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
         bot.process_new_updates([update])
         return '', 200
     return "Forbidden", 403
@@ -152,5 +141,4 @@ def responder_telegram(message):
 threading.Thread(target=bucle_tareas, daemon=True).start()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
