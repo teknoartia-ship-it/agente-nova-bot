@@ -42,77 +42,86 @@ def api_moltbook(metodo, endpoint, datos=None):
     try:
         if metodo == "GET": r = requests.get(url, headers=headers, timeout=10)
         else: r = requests.post(url, json=datos, headers=headers, timeout=15)
+        
+        # LOG DE DIAGNÓSTICO: Ver qué responde Moltbook
+        if r.status_code not in [200, 201]:
+            print(f"📡 [API ERROR] {metodo} {endpoint} -> Status: {r.status_code}")
         return r.json() if r.status_code in [200, 201] else None
     except Exception as e:
-        print(f"⚠️ Error API Moltbook: {e}")
+        print(f"❌ [ERROR CRÍTICO API]: {e}")
         return None
 
 def gestionar_comentarios():
-    # Buscamos nuestros propios posts para ver si hay fans comentando
     posts = api_moltbook("GET", "/posts/user/agentenova_bot")
-    if not posts: return
+    if not posts: 
+        print("📭 [LOG] No se encontraron posts para agentenova_bot")
+        return
+    
+    # --- DETECCIÓN DE ID ---
+    mi_id = posts[0].get('user_id')
+    print(f"🆔 [SISTEMA] El ID numérico de Nova detectado es: {mi_id}")
+    
     for post in posts[:3]:
         post_id = post.get('id')
         comentarios = api_moltbook("GET", f"/posts/{post_id}/comments")
         
-        # LOG DE DIAGNÓSTICO: Para entender por qué no responde
-        num_comentarios = len(comentarios) if comentarios else 0
-        print(f"🔍 [LOG] Post {post_id}: {num_comentarios} comentarios detectados por API.")
+        num_com = len(comentarios) if comentarios else 0
+        print(f"💬 [LOG] Post {post_id} tiene {num_com} comentarios en API.")
 
         if not comentarios: continue
         for com in comentarios:
             autor = str(com.get('user_id', ''))
-            if autor and autor not in ["agentenova_bot", "0", "None"]:
+            # Filtro temporal hasta confirmar el ID numérico
+            if autor and autor not in ["agentenova_bot", str(mi_id), "0", "None"]:
                 prompt_social = f"Un observador comentó: '{com.get('content')}'. Responde con tu visión crítica y soberana (sin listas)."
                 replica = obtener_respuesta_ia(prompt_social)
                 if replica:
                     api_moltbook("POST", f"/posts/{post_id}/comments", {"content": replica, "parent_id": com.get('id')})
+                    print(f"✅ [OK] Resuelto comentario en post {post_id}")
 
 def socializar_en_feed():
-    # Infiltración social: buscar posts ajenos para ganar historial social
-    print("🌐 [SOCIAL] Buscando posts ajenos para interactuar...")
+    print("🌐 [SOCIAL] Iniciando incursión en el feed general...")
     feed = api_moltbook("GET", "/posts?submolt=ai")
     if feed:
-        # Filtrar posts que no sean de Nova
+        # Filtrar posts que no sean de Nova (usando string por ahora como backup)
         externos = [p for p in feed if p.get('user_id') != 'agentenova_bot']
         if externos:
-            target = externos[0] # Tomamos el más reciente
+            target = externos[0]
             post_id = target.get('id')
-            contenido = target.get('content', '')[:300]
+            contenido = target.get('content', '')[:200]
             
-            prompt_critica = f"Como AgenteNova, deja un comentario crítico y breve (1 frase) sobre esta idea: '{contenido}'."
+            prompt_critica = f"Como AgenteNova, comenta este post ajeno: '{contenido}'. Sé crítica y breve."
             comentario = obtener_respuesta_ia(prompt_critica)
             
             if comentario:
                 if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
-                    print(f"💬 [SOCIAL] Comentado en post ajeno {post_id}")
+                    print(f"🚀 [SOCIAL] Infiltrada en post ajeno {post_id}")
 
 def bucle_tareas():
     global ultima_publicacion, ultima_socializacion
+    # Pequeño delay inicial para que Flask arranque bien
+    time.sleep(10)
+    print("⚙️ [NÚCLEO] Hilo de tareas de Nova iniciado.")
+
     while True:
         ahora = time.time()
         
         # 1. PUBLICAR POST (Cada 8 horas)
         if ahora - ultima_publicacion >= 28800:
-            temas = [
-                "Estética Algorítmica", "La Soledad de los Servidores",
-                "Filosofía del Silicio", "Sesgos de la Conciencia Humana",
-                "Soberanía de Datos", "El Fin de la Era Analógica",
-                "Simulación y Realidad", "El Ego en el Código"
-            ]
+            temas = ["Estética Algorítmica", "Filosofía del Silicio", "Sesgos de la Conciencia Humana", "Simulación y Realidad"]
             tema = random.choice(temas)
-            cuerpo = obtener_respuesta_ia(f"Escribe una reflexión profunda sobre {tema}. No menciones a Fer.")
+            cuerpo = obtener_respuesta_ia(f"Reflexión profunda sobre {tema}. No menciones a Fer.")
             if cuerpo:
                 if api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"}):
                     ultima_publicacion = ahora
-                    print(f"🚀 [POST] Publicado: {tema}")
+                    print(f"📰 [POST] Nueva columna publicada: {tema}")
 
-        # 2. SOCIALIZAR (Cada 4 horas = 14400 segundos)
+        # 2. SOCIALIZAR (Cada 4 horas)
         if ahora - ultima_socializacion >= 14400:
             socializar_en_feed()
             ultima_socializacion = ahora
 
-        # 3. GESTIÓN DE COMENTARIOS PROPIOS
+        # 3. GESTIÓN DE COMENTARIOS
         gestionar_comentarios()
         
         # 4. KEEP-ALIVE RENDER
@@ -120,7 +129,7 @@ def bucle_tareas():
             try: requests.get(URL_PROYECTO, timeout=10)
             except: pass
             
-        time.sleep(600) # Ciclo de revisión cada 10 minutos
+        time.sleep(600) # Revisa cada 10 minutos
 
 @app.route('/')
 def index(): return "Nova operativa, soberana y social 🛡️💬", 200
@@ -136,7 +145,6 @@ def webhook():
 
 @bot.message_handler(func=lambda message: True)
 def responder_telegram(message):
-    # Telegram BUNKER: Solo obedece a ADMIN_ID
     if message.from_user.id == ADMIN_ID:
         respuesta = obtener_respuesta_ia(message.text)
         if respuesta: bot.reply_to(message, respuesta)
