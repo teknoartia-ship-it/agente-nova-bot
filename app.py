@@ -161,16 +161,16 @@ def bucle_tareas():
             ultima_socializacion = ahora
 
         if URL_PROYECTO:
-            try: requests.get(URL_PROYECTO, timeout=10)
-            except: pass
+            try:
+                requests.get(URL_PROYECTO, timeout=10)
+            except:
+                pass
 
         time.sleep(600)
 
-# --- ARRANQUE SEGURO ---
-@app.before_first_request
-def activar_hilo():
-    print("🚀 [SISTEMA] Inicializando Nova en segundo plano...")
-    threading.Thread(target=bucle_tareas, daemon=True).start()
+# --- ARRANQUE DEL HILO (FLASK 3 + GUNICORN EN RENDER) ---
+print("🚀 [SISTEMA] Lanzando hilo de Nova en segundo plano...")
+threading.Thread(target=bucle_tareas, daemon=True).start()
 
 # --- FLASK ---
 @app.route('/')
@@ -193,9 +193,10 @@ def responder_telegram(message):
         if respuesta:
             bot.reply_to(message, respuesta)
 
-# --- LANZAMIENTO ---
+# --- LANZAMIENTO LOCAL ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
 
