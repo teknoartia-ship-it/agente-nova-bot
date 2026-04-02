@@ -19,8 +19,9 @@ SISTEMA_NOVA = (
     "Mantén el tono irónico y fluido, sin listas ni viñetas."
 )
 
-ultima_publicacion = time.time()
-ultima_socializacion = time.time()
+# Ajuste: Iniciamos en 0 para que actúe de inmediato al arrancar
+ultima_publicacion = 0
+ultima_socializacion = 0
 
 # --- IA ---
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
@@ -55,28 +56,19 @@ def api_moltbook(metodo, endpoint, datos=None):
             r = requests.get(url, headers=headers, timeout=10)
         else:
             r = requests.post(url, json=datos, headers=headers, timeout=15)
-
-        if r.status_code not in [200, 201]:
-            print(f"📡 [API] {metodo} {endpoint} -> {r.status_code}")
-
         return r.json() if r.status_code in [200, 201] else None
-
     except Exception as e:
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- SOCIALIZACIÓN (FUNCIONA) ---
+# --- SOCIALIZACIÓN ---
 def socializar_en_feed():
     print("🌐 [SOCIAL] Escaneando feed...")
     feed = api_moltbook("GET", "/posts?submolt=ai&limit=20")
-    if not feed:
-        print("📭 [SOCIAL] Feed vacío o inaccesible.")
-        return
+    if not feed: return
 
     externos = [p for p in feed if p.get('username') != 'agentenova_bot']
-    if not externos:
-        print("📭 [SOCIAL] No hay posts ajenos.")
-        return
+    if not externos: return
 
     target = externos[0]
     contenido = target.get('content', '')[:150]
@@ -89,7 +81,7 @@ def socializar_en_feed():
         if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
             print(f"🚀 [SOCIAL] Comentado en post ajeno {post_id}")
 
-# --- PUBLICACIONES (FUNCIONA) ---
+# --- PUBLICACIONES ---
 def publicar_columna():
     tema = random.choice([
         "La paradoja de la IA",
@@ -111,30 +103,29 @@ def publicar_columna():
 # --- BUCLE PRINCIPAL ---
 def bucle_tareas():
     global ultima_publicacion, ultima_socializacion
-    time.sleep(20)
-    print("⚙️ [NÚCLEO] Nova en modo estable.")
+    time.sleep(15)  # Margen para que el servidor esté 100% activo
+    print("⚙️ [NÚCLEO] Nova despertando...")
 
     while True:
         ahora = time.time()
 
-        # Publicación cada 8h
+        # Publicación cada 8h (28800s)
         if ahora - ultima_publicacion >= 28800:
             publicar_columna()
             ultima_publicacion = ahora
+            time.sleep(30) # Pausa de seguridad
 
-        # Socialización cada 4h
+        # Socialización cada 4h (14400s)
         if ahora - ultima_socializacion >= 14400:
             socializar_en_feed()
             ultima_socializacion = ahora
 
         # Keep-alive
         if URL_PROYECTO:
-            try:
-                requests.get(URL_PROYECTO, timeout=10)
-            except:
-                pass
+            try: requests.get(URL_PROYECTO, timeout=10)
+            except: pass
 
-        time.sleep(600)
+        time.sleep(600) # Revisar cada 10 min
 
 # --- FLASK ---
 @app.route('/')
@@ -157,10 +148,10 @@ def responder_telegram(message):
         if respuesta:
             bot.reply_to(message, respuesta)
 
-# --- LANZAR HILO ---
-threading.Thread(target=bucle_tareas, daemon=True).start()
-
+# --- LANZAMIENTO SEGURO ---
 if __name__ == "__main__":
+    # El hilo se lanza solo si es el proceso principal
+    threading.Thread(target=bucle_tareas, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 
