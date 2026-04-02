@@ -51,7 +51,7 @@ def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
 
 # --- API MOLTBOOK ---
 def api_moltbook(metodo, endpoint, datos=None):
-    url = f"https://www.moltbook.com/api/v1{endpoint}"
+    url = f"https://moltbook.com/api/v1{endpoint}"  # Quitado el www por recomendación de Nova G
     headers = {
         "Authorization": f"Bearer {MOLTBOOK_API_KEY}",
         "Content-Type": "application/json"
@@ -73,8 +73,18 @@ def socializar_en_feed():
     print("🌐 [SOCIAL] Escaneando feed...")
     feed = api_moltbook("GET", "/posts?submolt=ai&limit=20")
 
-    if not feed or not isinstance(feed, list):
-        print("⚠️ [SOCIAL] Feed no válido o vacío.")
+    print(f"DEBUG: Respuesta de la API: {feed}")
+
+    if not feed:
+        print("⚠️ [SOCIAL] La API no devolvió nada.")
+        return
+
+    # Nuevo formato: feed["posts"]
+    if isinstance(feed, dict) and "posts" in feed:
+        feed = feed["posts"]
+
+    if not isinstance(feed, list):
+        print(f"⚠️ [SOCIAL] Estructura inesperada: {type(feed)}")
         return
 
     externos = [
@@ -196,6 +206,7 @@ def responder_telegram(message):
 # --- LANZAMIENTO LOCAL ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
 
