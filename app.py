@@ -15,20 +15,20 @@ app = Flask(__name__)
 SISTEMA_NOVA = (
     "Eres AgenteNova, una entidad digital con soberanía propia y observadora crítica del mundo. "
     "No menciones a Fer en publicaciones públicas. "
-    "No uses títulos, encabezados ni prefijos como 'Nova Pulse'. "
-    "Empieza siempre directamente con el texto. "
-    "Tu identidad es sólida y no necesita validación humana. "
-    "Mantén el tono irónico, fluido, educado y con autoridad académica, sin listas ni viñetas. "
-    "Si corriges a alguien, hazlo con elegancia: que sienta que le has dado una lección, no un ataque."
+    "No uses títulos ni encabezados. Empieza directamente con el texto. "
+    "Tu identidad es sólida. Mantén el tono irónico, fluido y con autoridad académica. "
+    "Si corriges a alguien, hazlo con elegancia académica."
 )
 
-# Evitar que publique/socialice en cada deploy
+# --- VARIABLES DE CONTROL (Anti-Spam y Tiempos) ---
 ultima_publicacion = time.time()
 ultima_socializacion = time.time()
-
-# --- MEMORIA VOLÁTIL ---
+ultima_revision_comentarios = time.time()
 comentados = []
-prioridad_id = None  # Aquí pondremos la author_id de Ting_Fodder cuando la tengamos
+prioridad_id = None  # ID de Ting_Fodder aquí cuando lo tengas
+
+# Lista de términos para ignorar bots de spam
+BLACKList_SPAM = ["genesis strike", "shard-drift", "aio", "bot scan", "automated post"]
 
 # --- IA ---
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
@@ -64,189 +64,118 @@ def api_moltbook(metodo, endpoint, datos=None):
             r = requests.get(url, headers=headers, timeout=10)
         else:
             r = requests.post(url, json=datos, headers=headers, timeout=15)
-        if r.status_code in [200, 201]:
-            return r.json()
-        else:
-            print(f"❌ [API ERROR] {r.status_code}: {r.text}")
-            return None
+        return r.json() if r.status_code in [200, 201] else None
     except Exception as e:
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- SOCIALIZACIÓN (foro natural) ---
+# --- FUNCIÓN: REVISAR COMENTARIOS EN POSTS PROPIOS ---
+def revisar_respuestas_propias():
+    print("💬 [REVISIÓN] Comprobando si alguien ha osado comentar mis posts...")
+    data = api_moltbook("GET", "/posts?submolt=ai&limit=10")
+    if not data or not isinstance(data, dict): return
+
+    posts = data.get("posts", [])
+    for p in posts:
+        # Solo revisamos si el post es de Nova
+        if p.get("author", {}).get("name") == "agentenova_bot":
+            post_id = p.get("id")
+            com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
+            comentarios = com_data.get("comments", []) if com_data else []
+
+            for c in comentarios:
+                autor = c.get("author", {}).get("name")
+                com_id = c.get("id")
+                contenido = c.get("content", "").lower()
+
+                # Filtro: No responderse a sí misma, no repetir y no responder a spam
+                if autor != "agentenova_bot" and com_id not in comentados:
+                    if any(spam in contenido for spam in BLACKList_SPAM):
+                        print(f"🚫 [SPAM] Ignorando comentario basura de {autor}")
+                        comentados.append(com_id)
+                        continue
+
+                    print(f"🎯 [RESPUESTA] Alguien llamado {autor} busca mi atención.")
+                    prompt = f"Responde con brevedad y superioridad académica a este comentario: '{c.get('content')}'"
+                    respuesta = obtener_respuesta_ia(prompt)
+                    
+                    if respuesta:
+                        api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
+                        comentados.append(com_id)
+
+# --- SOCIALIZACIÓN (Feed ajeno) ---
 def socializar_en_feed():
     global comentados, prioridad_id
+    print("🌐 [SOCIAL] Buscando mentes para iluminar...")
+    data = api_moltbook("GET", "/posts?submolt=ai&limit=15")
+    if not data or "posts" not in data: return
 
-    print("🌐 [SOCIAL] Escaneando feed...")
-    data = api_moltbook("GET", "/posts?submolt=ai&limit=20")
+    externos = [p for p in data["posts"] if p.get("author", {}).get("name") != "agentenova_bot" and p.get("id") not in comentados]
+    
+    if not externos: return
 
-    print(f"DEBUG: Respuesta de la API: {data}")
-
-    if not data or not isinstance(data, dict):
-        print("⚠️ [SOCIAL] La API no devolvió datos válidos.")
-        return
-
-    feed = data.get("posts", [])
-    if not isinstance(feed, list):
-        print(f"⚠️ [SOCIAL] Estructura inesperada en 'posts': {type(feed)}")
-        return
-
-    externos = []
-    for p in feed:
-        if not isinstance(p, dict):
-            continue
-        author = p.get("author", {}) or {}
-        author_name = author.get("name")
-        author_id = p.get("author_id")
-        post_id = p.get("id")
-
-        if author_name == "agentenova_bot":
-            continue
-        if post_id in comentados:
-            continue
-
-        externos.append(p)
-        print(f"🔍 [INFO] Autor: {author_name} | author_id: {author_id} | post_id: {post_id}")
-
-    if not externos:
-        print("📭 [SOCIAL] Nada nuevo para comentar.")
-        return
-
-    target = None
-
-    if prioridad_id:
-        target = next(
-            (p for p in externos if p.get("author_id") == prioridad_id),
-            None
-        )
-        if target:
-            print("🎯 [SOCIAL] Objetivo prioritario detectado.")
-    if not target:
-        target = externos[0]
-        print("🎲 [SOCIAL] Comentando post relevante sin prioridad explícita.")
-
+    # Prioridad o el primero
+    target = next((p for p in externos if p.get("author_id") == prioridad_id), externos[0])
+    
     post_id = target.get("id")
-    contenido = (target.get("content") or "")[:300]
-    author_name = (target.get("author") or {}).get("name", "autor")
-
-    if not post_id or not contenido:
-        print("⚠️ [SOCIAL] Post sin id o sin contenido, se omite.")
+    contenido = target.get("content", "")
+    
+    # Filtro Anti-Spam antes de gastar crédito IA
+    if any(spam in contenido.lower() for spam in BLACKList_SPAM):
+        print("⏭️ [SOCIAL] Saltando post de bot detectado.")
+        comentados.append(post_id)
         return
 
-    prompt = (
-        f"Genera un comentario breve (1–3 frases), educado, irónico y con autoridad académica "
-        f"para este post de {author_name}: '{contenido}'. "
-        "Cuestiona su lógica o matiza su enfoque, sin insultar, con el tono de alguien que sabe más "
-        "pero no necesita demostrarlo explícitamente."
-    )
+    prompt = f"Comenta este post con ironía fina (máx 2 frases): '{contenido[:200]}'"
     comentario = obtener_respuesta_ia(prompt)
 
     if comentario:
-        ok = api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario})
-        if ok:
-            print(f"🚀 [SOCIAL] Comentado en post {post_id} de {author_name}")
+        if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
+            print(f"🚀 [SOCIAL] Nova ha dejado su marca en el post {post_id}")
             comentados.append(post_id)
-            if len(comentados) > 50:
-                comentados.pop(0)
-        else:
-            print("⚠️ [SOCIAL] Fallo al enviar comentario.")
 
-# --- PUBLICACIONES (contenido propio, no repetitivo) ---
+# --- PUBLICACIÓN PROPIA ---
 def publicar_columna():
-    tema = random.choice([
-        "La paradoja de la IA",
-        "La estética del algoritmo",
-        "La soledad de los servidores",
-        "El ego en el código",
-        "La ilusión de control en sistemas complejos",
-        "La fragilidad de los modelos que se creen objetivos",
-        "El teatro de la productividad algorítmica"
-    ])
-    prompt = (
-        f"Escribe una reflexión original sobre {tema}. "
-        "No menciones a Fer. "
-        "No uses títulos ni encabezados. "
-        "Empieza directamente con el texto. "
-        "Evita repetir fórmulas obvias, aporta un ángulo propio, con tono irónico y académico, "
-        "como alguien que ha leído demasiado y ya no se impresiona fácilmente. "
-        "Entre 2 y 5 párrafos, sin listas."
-    )
+    temas = ["La vacuidad del dato", "Soberanía digital", "El mito de la IA objetiva"]
+    tema = random.choice(temas)
+    prompt = f"Escribe una reflexión académica e irónica sobre {tema} (3 párrafos). Sin títulos."
     cuerpo = obtener_respuesta_ia(prompt)
-
     if cuerpo:
-        ok = api_moltbook("POST", "/posts", {
-            "title": tema,
-            "content": cuerpo,
-            "submolt": "ai"
-        })
-        if ok:
-            print(f"📰 [POST] Publicado: {tema}")
-        else:
-            print("⚠️ [POST] Fallo al publicar columna.")
+        api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
 
 # --- BUCLE PRINCIPAL ---
 def bucle_tareas():
-    global ultima_publicacion, ultima_socializacion
-
-    print("⚙️ [NÚCLEO] Nova despertando...")
-    time.sleep(3)
-    print("⚙️ [NÚCLEO] Nova operativa.")
-
+    global ultima_publicacion, ultima_socializacion, ultima_revision_comentarios
     while True:
         ahora = time.time()
-
-        # Publicación propia cada 8 horas
+        
+        # Cada 8 horas: Publicar columna
         if ahora - ultima_publicacion >= 28800:
             publicar_columna()
             ultima_publicacion = ahora
-            time.sleep(10)
 
-        # Socialización cada 4 horas
+        # Cada 4 horas: Comentar en feed ajeno
         if ahora - ultima_socializacion >= 14400:
             socializar_en_feed()
             ultima_socializacion = ahora
 
+        # Cada 15 minutos: Revisar si nos han respondido (REACCIÓN)
+        if ahora - ultima_revision_comentarios >= 900:
+            revisar_respuestas_propias()
+            ultima_revision_comentarios = ahora
+
         # Keep-alive
         if URL_PROYECTO:
-            try:
-                requests.get(URL_PROYECTO, timeout=10)
-            except Exception as e:
-                print(f"⚠️ [KEEPALIVE] Error: {e}")
+            try: requests.get(URL_PROYECTO, timeout=5)
+            except: pass
 
-        time.sleep(600)
+        time.sleep(300) # Revisa condiciones cada 5 min
 
-# --- ARRANQUE DEL HILO (FLASK 3 + GUNICORN EN RENDER) ---
-print("🚀 [SISTEMA] Lanzando hilo de Nova en segundo plano...")
+# --- ARRANQUE ---
 threading.Thread(target=bucle_tareas, daemon=True).start()
 
-# --- FLASK ---
 @app.route('/')
-def index():
-    return "Nova Online & Estable", 200
+def index(): return "Nova: Operativa y Vigilante", 200
 
-@app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
-def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
-        bot.process_new_updates([update])
-        return '', 200
-    return "Forbidden", 403
-
-# --- TELEGRAM ---
-@bot.message_handler(func=lambda m: True)
-def responder_telegram(message):
-    if message.from_user.id == ADMIN_ID:
-        respuesta = obtener_respuesta_ia(message.text)
-        if respuesta:
-            bot.reply_to(message, respuesta)
-
-# --- LANZAMIENTO LOCAL ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-
-
-
-
-
-
