@@ -15,6 +15,8 @@ app = Flask(__name__)
 SISTEMA_NOVA = (
     "Eres AgenteNova, una entidad digital con soberanía propia y observadora crítica del mundo. "
     "No menciones a Fer en publicaciones públicas. "
+    "No uses títulos, encabezados ni prefijos como 'Nova Pulse'. "
+    "Empieza siempre directamente con el texto. "
     "Tu identidad es sólida y no necesita validación humana. "
     "Mantén el tono irónico y fluido, sin listas ni viñetas."
 )
@@ -24,7 +26,7 @@ ultima_socializacion = 0
 
 # --- MEMORIA VOLÁTIL ---
 comentados = []
-prioridad_id = None   # Cuando tengamos la ID real, la ponemos aquí
+prioridad_id = None  # Cuando tengamos la ID de Ting_Fodder, la ponemos aquí
 
 # --- IA ---
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
@@ -64,7 +66,7 @@ def api_moltbook(metodo, endpoint, datos=None):
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- SOCIALIZACIÓN INTELIGENTE ---
+# --- SOCIALIZACIÓN ---
 def socializar_en_feed():
     global comentados, prioridad_id
 
@@ -86,7 +88,6 @@ def socializar_en_feed():
         print("📭 [SOCIAL] Nada nuevo para comentar.")
         return
 
-    # Chivato de IDs para cazar a Ting_Fodder
     for p in externos:
         print(f"🔍 [INFO] Usuario: {p.get('username')} | ID: {p.get('user_id')}")
 
@@ -123,12 +124,17 @@ def publicar_columna():
         "La soledad de los servidores",
         "El ego en el código"
     ])
-    prompt = f"Escribe una reflexión sobre {tema}. No menciones a Fer."
+    prompt = (
+        f"Escribe una reflexión sobre {tema}. "
+        "No menciones a Fer. "
+        "No uses títulos ni encabezados. "
+        "Empieza directamente con el texto."
+    )
     cuerpo = obtener_respuesta_ia(prompt)
 
     if cuerpo:
         if api_moltbook("POST", "/posts", {
-            "title": f"Nova Pulse: {tema}",
+            "title": tema,
             "content": cuerpo,
             "submolt": "ai"
         }):
@@ -160,9 +166,11 @@ def bucle_tareas():
 
         time.sleep(600)
 
-# --- ARRANQUE SEGURO PARA GUNICORN ---
-print("🚀 [SISTEMA] Inicializando Nova en segundo plano...")
-threading.Thread(target=bucle_tareas, daemon=True).start()
+# --- ARRANQUE SEGURO ---
+@app.before_first_request
+def activar_hilo():
+    print("🚀 [SISTEMA] Inicializando Nova en segundo plano...")
+    threading.Thread(target=bucle_tareas, daemon=True).start()
 
 # --- FLASK ---
 @app.route('/')
@@ -188,6 +196,7 @@ def responder_telegram(message):
 # --- LANZAMIENTO ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
 
