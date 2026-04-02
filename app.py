@@ -19,8 +19,13 @@ SISTEMA_NOVA = (
     "Mantén el tono irónico y fluido, sin listas ni viñetas."
 )
 
+# Tiempos forzados a 0 para actuar al arrancar
 ultima_publicacion = 0
 ultima_socializacion = 0
+
+# --- MEMORIA VOLÁTIL ---
+comentados = []          # posts ya comentados
+prioridad_id = None      # aquí pondremos la ID cuando la tengas
 
 # --- IA ---
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
@@ -55,41 +60,58 @@ def api_moltbook(metodo, endpoint, datos=None):
             r = requests.get(url, headers=headers, timeout=10)
         else:
             r = requests.post(url, json=datos, headers=headers, timeout=15)
-        
         return r.json() if r.status_code in [200, 201] else None
     except Exception as e:
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- SOCIALIZACIÓN (PARCHE APLICADO) ---
+# --- SOCIALIZACIÓN INTELIGENTE ---
 def socializar_en_feed():
+    global comentados, prioridad_id
+
     print("🌐 [SOCIAL] Escaneando feed...")
     feed = api_moltbook("GET", "/posts?submolt=ai&limit=20")
-    
-    # Parche de Nova C: Si no es una lista válida, abortamos silenciosamente
+
     if not feed or not isinstance(feed, list):
-        print("⚠️ [SOCIAL] Feed no válido o vacío. Reintentando luego.")
+        print("⚠️ [SOCIAL] Feed no válido o vacío.")
         return
 
-    # Filtrado seguro de posts ajenos
-    externos = [p for p in feed if isinstance(p, dict) and p.get('username') != 'agentenova_bot']
-    
+    # Filtrar posts ajenos no comentados
+    externos = [
+        p for p in feed
+        if isinstance(p, dict)
+        and p.get('username') != 'agentenova_bot'
+        and p.get('id') not in comentados
+    ]
+
     if not externos:
-        print("📭 [SOCIAL] No hay posts ajenos para comentar.")
+        print("📭 [SOCIAL] Nada nuevo para comentar.")
         return
 
-    target = externos[0]
-    print(f"🎯 [SOCIAL] Objetivo detectado: {target.get('username')} (ID: {target.get('user_id')})")
-    
-    contenido = target.get('content', '')[:150]
+    # Prioridad si tenemos ID
+    target = None
+    if prioridad_id:
+        for p in externos:
+            if p.get('user_id') == prioridad_id:
+                target = p
+                print("🎯 [SOCIAL] Objetivo prioritario detectado.")
+                break
+
+    if not target:
+        target = externos[0]
+
     post_id = target.get('id')
+    contenido = target.get('content', '')[:150]
 
     prompt = f"Comenta brevemente este pensamiento: '{contenido}'. Sé crítica e irónica."
     comentario = obtener_respuesta_ia(prompt)
 
     if comentario:
         if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
-            print(f"🚀 [SOCIAL] Comentado con éxito en post {post_id}")
+            print(f"🚀 [SOCIAL] Comentado en post {post_id}")
+            comentados.append(post_id)
+            if len(comentados) > 50:
+                comentados.pop(0)
 
 # --- PUBLICACIONES ---
 def publicar_columna():
@@ -119,18 +141,15 @@ def bucle_tareas():
     while True:
         ahora = time.time()
 
-        # Publicación cada 8h
         if ahora - ultima_publicacion >= 28800:
             publicar_columna()
             ultima_publicacion = ahora
             time.sleep(10)
 
-        # Socialización cada 4h
         if ahora - ultima_socializacion >= 14400:
             socializar_en_feed()
             ultima_socializacion = ahora
 
-        # Keep-alive
         if URL_PROYECTO:
             try: requests.get(URL_PROYECTO, timeout=10)
             except: pass
@@ -162,3 +181,5 @@ def responder_telegram(message):
 if __name__ == "__main__":
     threading.Thread(target=bucle_tareas, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
+
