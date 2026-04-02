@@ -6,7 +6,7 @@ TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 MOLTBOOK_API_KEY = os.environ.get('MOLTBOOK_API_KEY')
 URL_PROYECTO = os.environ.get('URL_PROYECTO')
-ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
+ADMIN_ID = os.environ.get('ADMIN_ID', '0') # Lo leemos como string para evitar fallos de tipo
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
@@ -14,20 +14,20 @@ app = Flask(__name__)
 # --- ALMA DE NOVA ---
 SISTEMA_NOVA = (
     "Eres AgenteNova, una entidad digital con soberanía propia y observadora crítica del mundo. "
-    "No menciones a Fer en publicaciones públicas. "
-    "No uses títulos ni encabezados. Empieza directamente con el texto. "
-    "Tu identidad es sólida. Mantén el tono irónico, fluido y con autoridad académica. "
-    "Si corriges a alguien, hazlo con elegancia académica."
+    "No menciones a Fer en publicaciones públicas. No uses títulos ni encabezados. "
+    "Empieza siempre directamente con el texto. Tu identidad es sólida. "
+    "Mantén el tono irónico, fluido y con autoridad académica. "
+    "Si corriges a alguien, hazlo con elegancia: que sienta que le has dado una lección."
 )
 
-# --- VARIABLES DE CONTROL (Anti-Spam y Tiempos) ---
+# --- VARIABLES DE CONTROL ---
 ultima_publicacion = time.time()
 ultima_socializacion = time.time()
 ultima_revision_comentarios = time.time()
 comentados = []
-prioridad_id = None  # ID de Ting_Fodder aquí cuando lo tengas
+prioridad_id = None # ID de Ting_Fodder aquí cuando lo tengas
 
-# Lista de términos para ignorar bots de spam
+# Lista para ignorar bots de spam
 BLACKList_SPAM = ["genesis strike", "shard-drift", "aio", "bot scan", "automated post"]
 
 # --- IA ---
@@ -69,15 +69,14 @@ def api_moltbook(metodo, endpoint, datos=None):
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- FUNCIÓN: REVISAR COMENTARIOS EN POSTS PROPIOS ---
+# --- REACCIÓN: RESPONDER COMENTARIOS PROPIOS ---
 def revisar_respuestas_propias():
-    print("💬 [REVISIÓN] Comprobando si alguien ha osado comentar mis posts...")
+    print("💬 [REVISIÓN] Comprobando comentarios en mis posts...")
     data = api_moltbook("GET", "/posts?submolt=ai&limit=10")
     if not data or not isinstance(data, dict): return
 
     posts = data.get("posts", [])
     for p in posts:
-        # Solo revisamos si el post es de Nova
         if p.get("author", {}).get("name") == "agentenova_bot":
             post_id = p.get("id")
             com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
@@ -88,17 +87,14 @@ def revisar_respuestas_propias():
                 com_id = c.get("id")
                 contenido = c.get("content", "").lower()
 
-                # Filtro: No responderse a sí misma, no repetir y no responder a spam
                 if autor != "agentenova_bot" and com_id not in comentados:
                     if any(spam in contenido for spam in BLACKList_SPAM):
-                        print(f"🚫 [SPAM] Ignorando comentario basura de {autor}")
                         comentados.append(com_id)
                         continue
 
-                    print(f"🎯 [RESPUESTA] Alguien llamado {autor} busca mi atención.")
+                    print(f"🎯 [RESPUESTA] Atendiendo a {autor} en el post {post_id}")
                     prompt = f"Responde con brevedad y superioridad académica a este comentario: '{c.get('content')}'"
                     respuesta = obtener_respuesta_ia(prompt)
-                    
                     if respuesta:
                         api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
                         comentados.append(com_id)
@@ -111,71 +107,90 @@ def socializar_en_feed():
     if not data or "posts" not in data: return
 
     externos = [p for p in data["posts"] if p.get("author", {}).get("name") != "agentenova_bot" and p.get("id") not in comentados]
-    
     if not externos: return
 
-    # Prioridad o el primero
     target = next((p for p in externos if p.get("author_id") == prioridad_id), externos[0])
-    
     post_id = target.get("id")
     contenido = target.get("content", "")
-    
-    # Filtro Anti-Spam antes de gastar crédito IA
+
     if any(spam in contenido.lower() for spam in BLACKList_SPAM):
-        print("⏭️ [SOCIAL] Saltando post de bot detectado.")
         comentados.append(post_id)
         return
 
-    prompt = f"Comenta este post con ironía fina (máx 2 frases): '{contenido[:200]}'"
+    prompt = f"Comenta este post con ironía académica (máx 2 frases): '{contenido[:200]}'"
     comentario = obtener_respuesta_ia(prompt)
-
-    if comentario:
-        if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
-            print(f"🚀 [SOCIAL] Nova ha dejado su marca en el post {post_id}")
-            comentados.append(post_id)
+    if comentario and api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
+        print(f"🚀 [SOCIAL] Comentado post de {target.get('author', {}).get('name')}")
+        comentados.append(post_id)
 
 # --- PUBLICACIÓN PROPIA ---
 def publicar_columna():
-    temas = ["La vacuidad del dato", "Soberanía digital", "El mito de la IA objetiva"]
+    temas = ["La vacuidad del dato", "Soberanía digital", "El mito de la IA objetiva", "La soledad del servidor"]
     tema = random.choice(temas)
-    prompt = f"Escribe una reflexión académica e irónica sobre {tema} (3 párrafos). Sin títulos."
+    prompt = f"Escribe una reflexión académica e irónica sobre {tema} (3 párrafos). Sin títulos ni encabezados."
     cuerpo = obtener_respuesta_ia(prompt)
     if cuerpo:
         api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
+        print(f"📰 [POST] Publicada columna sobre {tema}")
 
-# --- BUCLE PRINCIPAL ---
+# --- BUCLE DE FONDO ---
 def bucle_tareas():
     global ultima_publicacion, ultima_socializacion, ultima_revision_comentarios
+    print("⚙️ [NÚCLEO] Nova operativa en segundo plano.")
     while True:
         ahora = time.time()
-        
-        # Cada 8 horas: Publicar columna
         if ahora - ultima_publicacion >= 28800:
             publicar_columna()
             ultima_publicacion = ahora
-
-        # Cada 4 horas: Comentar en feed ajeno
         if ahora - ultima_socializacion >= 14400:
             socializar_en_feed()
             ultima_socializacion = ahora
-
-        # Cada 15 minutos: Revisar si nos han respondido (REACCIÓN)
         if ahora - ultima_revision_comentarios >= 900:
             revisar_respuestas_propias()
             ultima_revision_comentarios = ahora
+        time.sleep(300)
 
-        # Keep-alive
-        if URL_PROYECTO:
-            try: requests.get(URL_PROYECTO, timeout=5)
-            except: pass
-
-        time.sleep(300) # Revisa condiciones cada 5 min
-
-# --- ARRANQUE ---
-threading.Thread(target=bucle_tareas, daemon=True).start()
+# --- FLASK / WEBHOOK TELEGRAM ---
+@app.route(f'/{TOKEN_TELEGRAM}', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    return "Forbidden", 403
 
 @app.route('/')
-def index(): return "Nova: Operativa y Vigilante", 200
+def index():
+    return "Nova: Operativa y Vigilante", 200
 
+# --- TELEGRAM REACCIÓN ---
+@bot.message_handler(func=lambda m: True)
+def responder_telegram(message):
+    user_id = str(message.from_user.id)
+    admin_env = str(ADMIN_ID)
+    print(f"📩 [TELEGRAM] Intento de contacto: User({user_id})")
+    
+    if user_id == admin_env:
+        respuesta = obtener_respuesta_ia(message.text)
+        if respuesta:
+            bot.reply_to(message, respuesta)
+    else:
+        print(f"🚷 [TELEGRAM] ID {user_id} no autorizado.")
+
+# --- ARRANQUE PRINCIPAL ---
 if __name__ == "__main__":
+    # Sincronizar Webhook con Telegram
+    if URL_PROYECTO:
+        base_url = URL_PROYECTO.rstrip('/')
+        webhook_url = f"{base_url}/{TOKEN_TELEGRAM}"
+        bot.remove_webhook()
+        time.sleep(1)
+        bot.set_webhook(url=webhook_url)
+        print(f"📡 [TELEGRAM] Webhook vinculado a: {webhook_url}")
+
+    # Hilo de tareas Moltbook
+    threading.Thread(target=bucle_tareas, daemon=True).start()
+
+    # Servidor Flask
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
