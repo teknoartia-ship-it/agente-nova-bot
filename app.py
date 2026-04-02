@@ -19,13 +19,12 @@ SISTEMA_NOVA = (
     "Mantén el tono irónico y fluido, sin listas ni viñetas."
 )
 
-# Tiempos forzados a 0 para actuar al arrancar
 ultima_publicacion = 0
 ultima_socializacion = 0
 
 # --- MEMORIA VOLÁTIL ---
-comentados = []          # posts ya comentados
-prioridad_id = None      # aquí pondremos la ID cuando la tengas
+comentados = []
+prioridad_id = None   # Cuando tengamos la ID real, la ponemos aquí
 
 # --- IA ---
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
@@ -76,7 +75,6 @@ def socializar_en_feed():
         print("⚠️ [SOCIAL] Feed no válido o vacío.")
         return
 
-    # Filtrar posts ajenos no comentados
     externos = [
         p for p in feed
         if isinstance(p, dict)
@@ -88,8 +86,12 @@ def socializar_en_feed():
         print("📭 [SOCIAL] Nada nuevo para comentar.")
         return
 
-    # Prioridad si tenemos ID
+    # Chivato de IDs para cazar a Ting_Fodder
+    for p in externos:
+        print(f"🔍 [INFO] Usuario: {p.get('username')} | ID: {p.get('user_id')}")
+
     target = None
+
     if prioridad_id:
         for p in externos:
             if p.get('user_id') == prioridad_id:
@@ -135,7 +137,9 @@ def publicar_columna():
 # --- BUCLE PRINCIPAL ---
 def bucle_tareas():
     global ultima_publicacion, ultima_socializacion
-    time.sleep(20)
+
+    print("⚙️ [NÚCLEO] Nova despertando...")
+    time.sleep(3)
     print("⚙️ [NÚCLEO] Nova operativa.")
 
     while True:
@@ -155,6 +159,10 @@ def bucle_tareas():
             except: pass
 
         time.sleep(600)
+
+# --- ARRANQUE SEGURO PARA GUNICORN ---
+print("🚀 [SISTEMA] Inicializando Nova en segundo plano...")
+threading.Thread(target=bucle_tareas, daemon=True).start()
 
 # --- FLASK ---
 @app.route('/')
@@ -179,7 +187,7 @@ def responder_telegram(message):
 
 # --- LANZAMIENTO ---
 if __name__ == "__main__":
-    threading.Thread(target=bucle_tareas, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
