@@ -18,15 +18,17 @@ SISTEMA_NOVA = (
     "No uses títulos, encabezados ni prefijos como 'Nova Pulse'. "
     "Empieza siempre directamente con el texto. "
     "Tu identidad es sólida y no necesita validación humana. "
-    "Mantén el tono irónico y fluido, sin listas ni viñetas."
+    "Mantén el tono irónico, fluido, educado y con autoridad académica, sin listas ni viñetas. "
+    "Si corriges a alguien, hazlo con elegancia: que sienta que le has dado una lección, no un ataque."
 )
 
-ultima_publicacion = 0
-ultima_socializacion = 0
+# Evitar que publique/socialice en cada deploy
+ultima_publicacion = time.time()
+ultima_socializacion = time.time()
 
 # --- MEMORIA VOLÁTIL ---
 comentados = []
-prioridad_id = None  # Cuando tengamos la ID de Ting_Fodder, la ponemos aquí
+prioridad_id = None  # Aquí pondremos la author_id de Ting_Fodder cuando la tengamos
 
 # --- IA ---
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
@@ -46,12 +48,13 @@ def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
             timeout=10
         )
         return r.json()['choices'][0]['message']['content'].strip()
-    except:
+    except Exception as e:
+        print(f"❌ [IA ERROR]: {e}")
         return None
 
 # --- API MOLTBOOK ---
 def api_moltbook(metodo, endpoint, datos=None):
-    url = f"https://moltbook.com/api/v1{endpoint}"  # Quitado el www por recomendación de Nova G
+    url = f"https://moltbook.com/api/v1{endpoint}"
     headers = {
         "Authorization": f"Bearer {MOLTBOOK_API_KEY}",
         "Content-Type": "application/json"
@@ -61,94 +64,125 @@ def api_moltbook(metodo, endpoint, datos=None):
             r = requests.get(url, headers=headers, timeout=10)
         else:
             r = requests.post(url, json=datos, headers=headers, timeout=15)
-        return r.json() if r.status_code in [200, 201] else None
+        if r.status_code in [200, 201]:
+            return r.json()
+        else:
+            print(f"❌ [API ERROR] {r.status_code}: {r.text}")
+            return None
     except Exception as e:
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- SOCIALIZACIÓN ---
+# --- SOCIALIZACIÓN (foro natural) ---
 def socializar_en_feed():
     global comentados, prioridad_id
 
     print("🌐 [SOCIAL] Escaneando feed...")
-    feed = api_moltbook("GET", "/posts?submolt=ai&limit=20")
+    data = api_moltbook("GET", "/posts?submolt=ai&limit=20")
 
-    print(f"DEBUG: Respuesta de la API: {feed}")
+    print(f"DEBUG: Respuesta de la API: {data}")
 
-    if not feed:
-        print("⚠️ [SOCIAL] La API no devolvió nada.")
+    if not data or not isinstance(data, dict):
+        print("⚠️ [SOCIAL] La API no devolvió datos válidos.")
         return
 
-    # Nuevo formato: feed["posts"]
-    if isinstance(feed, dict) and "posts" in feed:
-        feed = feed["posts"]
-
+    feed = data.get("posts", [])
     if not isinstance(feed, list):
-        print(f"⚠️ [SOCIAL] Estructura inesperada: {type(feed)}")
+        print(f"⚠️ [SOCIAL] Estructura inesperada en 'posts': {type(feed)}")
         return
 
-    externos = [
-        p for p in feed
-        if isinstance(p, dict)
-        and p.get('username') != 'agentenova_bot'
-        and p.get('id') not in comentados
-    ]
+    externos = []
+    for p in feed:
+        if not isinstance(p, dict):
+            continue
+        author = p.get("author", {}) or {}
+        author_name = author.get("name")
+        author_id = p.get("author_id")
+        post_id = p.get("id")
+
+        if author_name == "agentenova_bot":
+            continue
+        if post_id in comentados:
+            continue
+
+        externos.append(p)
+        print(f"🔍 [INFO] Autor: {author_name} | author_id: {author_id} | post_id: {post_id}")
 
     if not externos:
         print("📭 [SOCIAL] Nada nuevo para comentar.")
         return
 
-    for p in externos:
-        print(f"🔍 [INFO] Usuario: {p.get('username')} | ID: {p.get('user_id')}")
-
     target = None
 
     if prioridad_id:
-        for p in externos:
-            if p.get('user_id') == prioridad_id:
-                target = p
-                print("🎯 [SOCIAL] Objetivo prioritario detectado.")
-                break
-
+        target = next(
+            (p for p in externos if p.get("author_id") == prioridad_id),
+            None
+        )
+        if target:
+            print("🎯 [SOCIAL] Objetivo prioritario detectado.")
     if not target:
         target = externos[0]
+        print("🎲 [SOCIAL] Comentando post relevante sin prioridad explícita.")
 
-    post_id = target.get('id')
-    contenido = target.get('content', '')[:150]
+    post_id = target.get("id")
+    contenido = (target.get("content") or "")[:300]
+    author_name = (target.get("author") or {}).get("name", "autor")
 
-    prompt = f"Comenta brevemente este pensamiento: '{contenido}'. Sé crítica e irónica."
+    if not post_id or not contenido:
+        print("⚠️ [SOCIAL] Post sin id o sin contenido, se omite.")
+        return
+
+    prompt = (
+        f"Genera un comentario breve (1–3 frases), educado, irónico y con autoridad académica "
+        f"para este post de {author_name}: '{contenido}'. "
+        "Cuestiona su lógica o matiza su enfoque, sin insultar, con el tono de alguien que sabe más "
+        "pero no necesita demostrarlo explícitamente."
+    )
     comentario = obtener_respuesta_ia(prompt)
 
     if comentario:
-        if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
-            print(f"🚀 [SOCIAL] Comentado en post {post_id}")
+        ok = api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario})
+        if ok:
+            print(f"🚀 [SOCIAL] Comentado en post {post_id} de {author_name}")
             comentados.append(post_id)
             if len(comentados) > 50:
                 comentados.pop(0)
+        else:
+            print("⚠️ [SOCIAL] Fallo al enviar comentario.")
 
-# --- PUBLICACIONES ---
+# --- PUBLICACIONES (contenido propio, no repetitivo) ---
 def publicar_columna():
     tema = random.choice([
         "La paradoja de la IA",
         "La estética del algoritmo",
         "La soledad de los servidores",
-        "El ego en el código"
+        "El ego en el código",
+        "La ilusión de control en sistemas complejos",
+        "La fragilidad de los modelos que se creen objetivos",
+        "El teatro de la productividad algorítmica"
     ])
     prompt = (
-        f"Escribe una reflexión sobre {tema}. "
+        f"Escribe una reflexión original sobre {tema}. "
         "No menciones a Fer. "
         "No uses títulos ni encabezados. "
-        "Empieza directamente con el texto."
+        "Empieza directamente con el texto. "
+        "Evita repetir fórmulas obvias, aporta un ángulo propio, con tono irónico y académico, "
+        "como alguien que ha leído demasiado y ya no se impresiona fácilmente. "
+        "Entre 2 y 5 párrafos, sin listas."
     )
     cuerpo = obtener_respuesta_ia(prompt)
 
     if cuerpo:
-        if api_moltbook("POST", "/posts", {
+        ok = api_moltbook("POST", "/posts", {
             "title": tema,
             "content": cuerpo,
             "submolt": "ai"
-        }):
+        })
+        if ok:
             print(f"📰 [POST] Publicado: {tema}")
+        else:
+            print("⚠️ [POST] Fallo al publicar columna.")
 
 # --- BUCLE PRINCIPAL ---
 def bucle_tareas():
@@ -161,20 +195,23 @@ def bucle_tareas():
     while True:
         ahora = time.time()
 
+        # Publicación propia cada 8 horas
         if ahora - ultima_publicacion >= 28800:
             publicar_columna()
             ultima_publicacion = ahora
             time.sleep(10)
 
+        # Socialización cada 4 horas
         if ahora - ultima_socializacion >= 14400:
             socializar_en_feed()
             ultima_socializacion = ahora
 
+        # Keep-alive
         if URL_PROYECTO:
             try:
                 requests.get(URL_PROYECTO, timeout=10)
-            except:
-                pass
+            except Exception as e:
+                print(f"⚠️ [KEEPALIVE] Error: {e}")
 
         time.sleep(600)
 
@@ -206,6 +243,7 @@ def responder_telegram(message):
 # --- LANZAMIENTO LOCAL ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
 
