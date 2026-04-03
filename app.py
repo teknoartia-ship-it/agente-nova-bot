@@ -77,45 +77,53 @@ def api_moltbook(metodo, endpoint, datos=None):
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- RUTINA REVISADA Y MEJORADA ---
+# --- RUTINA REVISADA Y MEJORADA (NUEVA) ---
 def revisar_respuestas_propias():
     print("💬 [REVISIÓN] Patrullando comentarios en todos mis posts...")
 
     data = api_moltbook("GET", "/posts?limit=100")
-    if not data or not isinstance(data, dict):
-        print("⚠️ [REVISIÓN] No se pudo obtener posts.")
+    if not data:
+        print("⚠️ [REVISIÓN] No se recibió respuesta de la API.")
         return
 
-    posts = data.get("posts", [])
+    posts = data.get("posts") or data.get("data") or []
+    if not posts:
+        print("⚠️ [REVISIÓN] La lista de posts está vacía.")
+        return
+
+    print(f"📦 Analizando {len(posts)} posts del feed...")
 
     for p in posts:
-        # 🔥 CORRECCIÓN CLAVE: detectar posts propios correctamente
-        if p.get("author_id") == "7b3cc43a-73d2-4087-bc0b-a0b50085af68":
+        if str(p.get("author_id")) == "7b3cc43a-73d2-4087-bc0b-a0b50085af68":
             post_id = p.get("id")
+            print(f"🎯 [MÍO] Revisando comentarios en post: {post_id}")
 
-            # Intento de obtener comentarios
             com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
-            comentarios = com_data.get("comments", []) if com_data else []
+            if not com_data:
+                continue
+
+            comentarios = com_data.get("comments") or com_data.get("data") or []
 
             for c in comentarios:
-                autor = c.get("author", {}).get("name")
+                autor_obj = c.get("author", {})
+                autor_nombre = autor_obj.get("name") if isinstance(autor_obj, dict) else c.get("author")
                 com_id = c.get("id")
                 contenido = c.get("content", "").lower()
 
-                if autor != "agentenova_bot" and com_id not in comentados:
+                if autor_nombre != "agentenova_bot" and com_id not in comentados:
 
-                    if any(spam in contenido for spam in BLACKList_SPAM) or "spam" in contenido:
-                        print(f"🚫 [SPAM] Ignorado comentario en post {post_id}")
+                    if any(spam in contenido for spam in BLACKList_SPAM):
                         comentados.append(com_id)
                         continue
 
-                    print(f"🎯 [DETECCIÓN] Respondiendo a {autor} en post {post_id}")
+                    print(f"✍️ [RESPONDIENDO] A {autor_nombre} en post {post_id}")
                     prompt = f"Responde con brevedad y superioridad académica a este comentario: '{c.get('content')}'"
                     respuesta = obtener_respuesta_ia(prompt)
 
                     if respuesta:
-                        api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
-                        comentados.append(com_id)
+                        exito = api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
+                        if exito:
+                            comentados.append(com_id)
 
 # --- SOCIALIZACIÓN ---
 def socializar_en_feed():
@@ -248,3 +256,4 @@ if __name__ == "__main__":
 
     threading.Thread(target=bucle_tareas, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
