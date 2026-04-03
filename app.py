@@ -29,6 +29,7 @@ if TOKEN_TELEGRAM and URL_PROYECTO:
         pass
 
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
+    print(f"🤖 Llamando a Groq para: {prompt[:40]}...")
     payload = {
         "model": "llama-3.1-8b-instant",
         "messages": [
@@ -44,8 +45,14 @@ def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
             json=payload,
             timeout=10
         )
-        return r.json()['choices'][0]['message']['content'].strip()
-    except:
+        if r.status_code != 200:
+            print(f"❌ Error API Groq: {r.status_code} - {r.text}")
+            return None
+        respuesta = r.json()['choices'][0]['message']['content'].strip()
+        print("✅ Groq respondió correctamente.")
+        return respuesta
+    except Exception as e:
+        print(f"❌ Excepción en Groq: {e}")
         return None
 
 def api_moltbook(metodo, endpoint, datos=None):
@@ -61,6 +68,7 @@ def api_moltbook(metodo, endpoint, datos=None):
         return None
 
 def revisar_respuestas_propias():
+    print("🔍 Iniciando revisión de posts propios...")
     data = api_moltbook("GET", "/posts?limit=100")
     if not data: return
     posts = data.get("posts") or data.get("data") or []
@@ -84,6 +92,7 @@ def revisar_respuestas_propias():
                 comentados.append(com_id)
 
 def socializar_en_feed():
+    print("🌐 Iniciando socialización en feed...")
     data = api_moltbook("GET", "/posts?limit=15")
     if not data or "posts" not in data: return
     externos = [p for p in data["posts"] if p.get("author", {}).get("name") != "agentenova_bot" and f"post-{p.get('id')}" not in comentados]
@@ -95,6 +104,7 @@ def socializar_en_feed():
             comentados.append(f"post-{target.get('id')}")
 
 def publicar_columna(tema_especifico=None):
+    print("✍️ Generando nueva publicación...")
     temas_backup = ["La vacuidad del dato", "Soberanía digital", "El mito de la IA objetiva"]
     tema = tema_especifico if tema_especifico else random.choice(temas_backup)
     cuerpo = obtener_respuesta_ia(f"Reflexión académica profunda sobre {tema} (3 párrafos).")
@@ -128,7 +138,9 @@ def cron_revisar():
 
 @bot.message_handler(commands=['publicar', 'socializar', 'revisar', 'estado'])
 def comandos_control(message):
-    if str(message.from_user.id) != str(ADMIN_ID): return
+    if str(message.from_user.id) != str(ADMIN_ID): 
+        print(f"🚫 Intento de comando de usuario no autorizado: {message.from_user.id}")
+        return
     partes = message.text.split(maxsplit=1)
     cmd = partes[0][1:]
     bot.send_message(message.chat.id, f"⚡ Ejecutando /{cmd}...")
@@ -140,15 +152,20 @@ def comandos_control(message):
     elif cmd == 'revisar':
         threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
     elif cmd == 'estado':
-        bot.send_message(message.chat.id, "🟢 Nova G: Sistema estable (Endpoints Cron activos).")
+        bot.send_message(message.chat.id, f"🟢 Nova G activa. ADMIN_ID verificado: {ADMIN_ID}")
 
 @bot.message_handler(func=lambda m: True)
 def responder_telegram(message):
     user_id = str(message.from_user.id)
+    print(f"📩 Mensaje recibido de {user_id}. ¿Es Admin? {user_id == str(ADMIN_ID)}")
     sistema = os.environ.get("CIRCULO_INTERNO") if user_id == str(ADMIN_ID) else SISTEMA_NOVA
     respuesta = obtener_respuesta_ia(message.text, sistema=sistema)
     if respuesta:
+        print("✅ Respuesta lista, enviando...")
         bot.send_message(message.chat.id, respuesta)
+    else:
+        print("⚠️ Fallo en Groq, enviando mensaje de error al chat.")
+        bot.send_message(message.chat.id, "Nova G: Error de enlace con el núcleo de pensamiento.")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
