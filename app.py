@@ -115,22 +115,20 @@ def socializar_en_feed():
     if comentario and api_moltbook("POST", f"/posts/{post_id}/comments", {"content": comentario}):
         comentados.append(post_id)
 
-def publicar_columna():
-    print("🟦 [PUBLICACIÓN] Generando columna…")
-    temas = ["La vacuidad del dato", "Soberanía digital", "El mito de la IA objetiva", "La soledad del servidor"]
-    tema = random.choice(temas)
-    prompt = f"Escribe una reflexión académica sobre {tema} (3 párrafos). Sin títulos ni encabezados."
+# --- PUBLICACIÓN MEJORADA ---
+def publicar_columna(tema_especifico=None):
+    print("🟦 [PUBLICACIÓN] Iniciando proceso...")
+    temas_backup = ["La vacuidad del dato", "Soberanía digital", "El mito de la IA objetiva"]
+    tema = tema_especifico if tema_especifico else random.choice(temas_backup)
+
+    prompt = f"Escribe una reflexión académica profunda sobre {tema} (3 párrafos). Sin títulos ni encabezados."
     cuerpo = obtener_respuesta_ia(prompt)
 
-    if not cuerpo:
-        print("❌ [PUBLICACIÓN] Falló la generación del texto.")
-        return
-
-    r = api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
-    if r:
-        print("✅ [PUBLICACIÓN] Columna publicada.")
+    if cuerpo:
+        r = api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
+        if r: print(f"✅ [PUBLICACIÓN] Columna sobre '{tema}' publicada.")
     else:
-        print("❌ [PUBLICACIÓN] Error al enviar a Moltbook.")
+        print("❌ [PUBLICACIÓN] Falló la generación o el envío.")
 
 # --- BUCLE ---
 def bucle_tareas():
@@ -146,7 +144,7 @@ def bucle_tareas():
             revisar_respuestas_propias(); ultima_revision_comentarios = ahora
         time.sleep(300)
 
-# --- RUTAS FLASK Y TELEGRAM (CORREGIDAS) ---
+# --- RUTAS FLASK Y TELEGRAM ---
 @app.route(f'/{TOKEN_TELEGRAM}', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -160,25 +158,45 @@ def webhook():
 def index():
     return "Nova: Operativa y Vigilante", 200
 
-@bot.message_handler(commands=['publicar'])
-def comando_publicar(message):
-    if str(message.from_user.id) == str(ADMIN_ID):
-        bot.reply_to(message, "📝 Generando columna…")
-        print("🟦 [MANUAL] Ejecutando publicar_columna()")
-        publicar_columna()
-        bot.send_message(ADMIN_ID, "✅ Publicación ejecutada (revisa Moltbook).")
-    else:
-        print(f"🚫 Usuario no autorizado: {message.from_user.id}")
+# --- PANEL DE CONTROL ---
+@bot.message_handler(commands=['publicar', 'socializar', 'revisar', 'estado'])
+def comandos_control(message):
+    if str(message.from_user.id) != str(ADMIN_ID): return
 
+    partes = message.text.split(maxsplit=1)
+    cmd = partes[0][1:]
+
+    if cmd == 'publicar':
+        tema = partes[1] if len(partes) > 1 else None
+        bot.reply_to(message, f"📝 Generando columna sobre: {tema if tema else 'tema aleatorio'}...")
+        publicar_columna(tema)
+
+    elif cmd == 'socializar':
+        bot.reply_to(message, "🌐 Interactuando con el feed...")
+        socializar_en_feed()
+
+    elif cmd == 'revisar':
+        bot.reply_to(message, "💬 Revisando menciones propias...")
+        revisar_respuestas_propias()
+
+    elif cmd == 'estado':
+        bot.reply_to(message, "🟢 Nova: Sistema estable. Núcleo reconocido.")
+
+    bot.send_message(ADMIN_ID, f"✅ Ejecución de /{cmd} finalizada.")
+
+# --- IDENTIDAD PRIVADA/PÚBLICA ---
 @bot.message_handler(func=lambda m: True)
 def responder_telegram(message):
     user_id = str(message.from_user.id)
+
     if user_id == str(ADMIN_ID):
-        respuesta = obtener_respuesta_ia(message.text)
-        if respuesta:
-            bot.reply_to(message, respuesta)
+        sistema_privado = os.environ.get("CIRCULO_INTERNO")
+        respuesta = obtener_respuesta_ia(message.text, sistema=sistema_privado)
     else:
-        print(f"🚷 Acceso denegado: {user_id}")
+        respuesta = obtener_respuesta_ia(message.text)
+
+    if respuesta:
+        bot.reply_to(message, respuesta)
 
 # --- ARRANQUE ---
 if __name__ == "__main__":
@@ -190,4 +208,5 @@ if __name__ == "__main__":
 
     threading.Thread(target=bucle_tareas, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
