@@ -77,60 +77,74 @@ def api_moltbook(metodo, endpoint, datos=None):
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- RUTINA REVISADA Y MEJORADA ---
+# --- RUTINA DE BARRIDO TOTAL (PAGINADA) ---
 def revisar_respuestas_propias():
-    print("💬 [REVISIÓN] Patrullando comentarios en todos mis posts...")
+    print("💬 [REVISIÓN] Iniciando barrido total de historial...")
 
-    data = api_moltbook("GET", "/posts?limit=100")
-    if not data:
-        print("⚠️ [REVISIÓN] No se recibió respuesta de la API.")
-        return
+    pagina = 1
+    total_revisados = 0
+    encontrados_mios = 0
 
-    posts = data.get("posts") or data.get("data") or []
-    if not posts:
-        print("⚠️ [REVISIÓN] La lista de posts está vacía.")
-        return
+    while True:
+        endpoint = f"/posts?limit=100&page={pagina}"
+        data = api_moltbook("GET", endpoint)
 
-    print(f"📦 Analizando {len(posts)} posts del feed...")
+        if not data:
+            print(f"⚠️ [REVISIÓN] Sin datos en página {pagina}. Deteniendo.")
+            break
 
-    for p in posts:
+        posts = data.get("posts") or data.get("data") or []
 
-        # 🔥 NUEVO FILTRO: por ID O por nombre
-        es_mio = (
-            str(p.get("author_id")) == "7b3cc43a-73d2-4087-bc0b-a0b50085af68" or
-            p.get("author", {}).get("name") == "agentenova_bot"
-        )
+        if not posts:
+            print(f"🏁 [REVISIÓN] Fin del historial alcanzado en página {pagina-1}.")
+            break
 
-        if es_mio:
-            post_id = p.get("id")
-            print(f"🎯 [MÍO] Reconocido post: {p.get('title')} (ID: {post_id})")
+        print(f"📦 Analizando página {pagina} ({len(posts)} posts)...")
 
-            com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
-            if not com_data:
-                continue
+        for p in posts:
+            total_revisados += 1
 
-            comentarios = com_data.get("comments") or com_data.get("data") or []
+            es_mio = (
+                str(p.get("author_id")) == "7b3cc43a-73d2-4087-bc0b-a0b50085af68" or
+                p.get("author", {}).get("name") == "agentenova_bot"
+            )
 
-            for c in comentarios:
-                autor_obj = c.get("author", {})
-                autor_nombre = autor_obj.get("name") if isinstance(autor_obj, dict) else c.get("author")
-                com_id = c.get("id")
-                contenido = c.get("content", "").lower()
+            if es_mio:
+                encontrados_mios += 1
+                post_id = p.get("id")
+                print(f"🎯 [MÍO] '{p.get('title')}' (ID: {post_id})")
 
-                if autor_nombre != "agentenova_bot" and com_id not in comentados:
+                com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
+                if not com_data:
+                    continue
 
-                    if any(spam in contenido for spam in BLACKList_SPAM):
-                        comentados.append(com_id)
-                        continue
+                comentarios = com_data.get("comments") or com_data.get("data") or []
 
-                    print(f"✍️ [RESPONDIENDO] A {autor_nombre} en post {post_id}")
-                    prompt = f"Responde con brevedad y superioridad académica a este comentario: '{c.get('content')}'"
-                    respuesta = obtener_respuesta_ia(prompt)
+                for c in comentarios:
+                    autor_obj = c.get("author", {})
+                    autor_nombre = autor_obj.get("name") if isinstance(autor_obj, dict) else c.get("author")
+                    com_id = c.get("id")
+                    contenido = c.get("content", "").lower()
 
-                    if respuesta:
-                        exito = api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
-                        if exito:
+                    if autor_nombre != "agentenova_bot" and com_id not in comentados:
+
+                        if any(spam in contenido for spam in BLACKList_SPAM):
                             comentados.append(com_id)
+                            continue
+
+                        print(f"✍️ [RESPONDIENDO] A {autor_nombre} en post {post_id}")
+                        prompt = f"Responde con brevedad y superioridad académica a este comentario: '{c.get('content')}'"
+                        respuesta = obtener_respuesta_ia(prompt)
+
+                        if respuesta:
+                            exito = api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
+                            if exito:
+                                comentados.append(com_id)
+
+        pagina += 1
+        time.sleep(1)
+
+    print(f"✅ [REVISIÓN FINALIZADA] Analizados {total_revisados} posts. Encontrados {encontrados_mios} de Nova.")
 
 # --- SOCIALIZACIÓN ---
 def socializar_en_feed():
@@ -263,5 +277,4 @@ if __name__ == "__main__":
 
     threading.Thread(target=bucle_tareas, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
 
