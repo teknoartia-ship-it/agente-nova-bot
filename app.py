@@ -77,7 +77,7 @@ def api_moltbook(metodo, endpoint, datos=None):
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- RUTINA REVISADA Y MEJORADA (NUEVA) ---
+# --- RUTINA REVISADA Y MEJORADA ---
 def revisar_respuestas_propias():
     print("💬 [REVISIÓN] Patrullando comentarios en todos mis posts...")
 
@@ -94,9 +94,16 @@ def revisar_respuestas_propias():
     print(f"📦 Analizando {len(posts)} posts del feed...")
 
     for p in posts:
-        if str(p.get("author_id")) == "7b3cc43a-73d2-4087-bc0b-a0b50085af68":
+
+        # 🔥 NUEVO FILTRO: por ID O por nombre
+        es_mio = (
+            str(p.get("author_id")) == "7b3cc43a-73d2-4087-bc0b-a0b50085af68" or
+            p.get("author", {}).get("name") == "agentenova_bot"
+        )
+
+        if es_mio:
             post_id = p.get("id")
-            print(f"🎯 [MÍO] Revisando comentarios en post: {post_id}")
+            print(f"🎯 [MÍO] Reconocido post: {p.get('title')} (ID: {post_id})")
 
             com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
             if not com_data:
@@ -256,4 +263,5 @@ if __name__ == "__main__":
 
     threading.Thread(target=bucle_tareas, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
