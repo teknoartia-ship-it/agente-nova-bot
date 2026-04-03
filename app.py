@@ -77,74 +77,62 @@ def api_moltbook(metodo, endpoint, datos=None):
         print(f"❌ [API ERROR]: {e}")
         return None
 
-# --- RUTINA DE BARRIDO TOTAL (PAGINADA) ---
+# --- REVISIÓN DE RESPUESTAS PROPIAS (SIN PAGINACIÓN) ---
 def revisar_respuestas_propias():
-    print("💬 [REVISIÓN] Iniciando barrido total de historial...")
+    print("💬 [REVISIÓN] Revisando últimos 100 posts del feed...")
 
-    pagina = 1
-    total_revisados = 0
-    encontrados_mios = 0
+    data = api_moltbook("GET", "/posts?limit=100")
+    if not data:
+        print("⚠️ [REVISIÓN] No se pudo obtener el feed.")
+        return
 
-    while True:
-        endpoint = f"/posts?limit=100&page={pagina}"
-        data = api_moltbook("GET", endpoint)
+    posts = data.get("posts") or data.get("data") or []
+    print(f"📦 Analizando {len(posts)} posts...")
 
-        if not data:
-            print(f"⚠️ [REVISIÓN] Sin datos en página {pagina}. Deteniendo.")
-            break
+    for p in posts:
+        es_mio = (
+            str(p.get("author_id")) == "7b3cc43a-73d2-4087-bc0b-a0b50085af68" or
+            p.get("author", {}).get("name") == "agentenova_bot"
+        )
 
-        posts = data.get("posts") or data.get("data") or []
+        if not es_mio:
+            continue
 
-        if not posts:
-            print(f"🏁 [REVISIÓN] Fin del historial alcanzado en página {pagina-1}.")
-            break
+        post_id = p.get("id")
+        print(f"🎯 [MÍO] '{p.get('title')}' (ID: {post_id})")
 
-        print(f"📦 Analizando página {pagina} ({len(posts)} posts)...")
+        com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
+        if not com_data:
+            continue
 
-        for p in posts:
-            total_revisados += 1
+        comentarios = com_data.get("comments") or com_data.get("data") or []
 
-            es_mio = (
-                str(p.get("author_id")) == "7b3cc43a-73d2-4087-bc0b-a0b50085af68" or
-                p.get("author", {}).get("name") == "agentenova_bot"
-            )
+        for c in comentarios:
+            autor_obj = c.get("author", {})
+            autor_nombre = autor_obj.get("name") if isinstance(autor_obj, dict) else c.get("author")
+            com_id = c.get("id")
+            contenido = c.get("content", "").lower()
 
-            if es_mio:
-                encontrados_mios += 1
-                post_id = p.get("id")
-                print(f"🎯 [MÍO] '{p.get('title')}' (ID: {post_id})")
+            if autor_nombre == "agentenova_bot":
+                continue
 
-                com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
-                if not com_data:
-                    continue
+            if com_id in comentados:
+                continue
 
-                comentarios = com_data.get("comments") or com_data.get("data") or []
+            if any(spam in contenido for spam in BLACKList_SPAM):
+                comentados.append(com_id)
+                continue
 
-                for c in comentarios:
-                    autor_obj = c.get("author", {})
-                    autor_nombre = autor_obj.get("name") if isinstance(autor_obj, dict) else c.get("author")
-                    com_id = c.get("id")
-                    contenido = c.get("content", "").lower()
+            print(f"✍️ [RESPONDIENDO] A {autor_nombre} en post {post_id}")
+            prompt = f"Responde con brevedad y superioridad académica a este comentario: '{c.get('content')}'"
+            respuesta = obtener_respuesta_ia(prompt)
 
-                    if autor_nombre != "agentenova_bot" and com_id not in comentados:
+            if respuesta:
+                exito = api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
+                if exito:
+                    comentados.append(com_id)
 
-                        if any(spam in contenido for spam in BLACKList_SPAM):
-                            comentados.append(com_id)
-                            continue
-
-                        print(f"✍️ [RESPONDIENDO] A {autor_nombre} en post {post_id}")
-                        prompt = f"Responde con brevedad y superioridad académica a este comentario: '{c.get('content')}'"
-                        respuesta = obtener_respuesta_ia(prompt)
-
-                        if respuesta:
-                            exito = api_moltbook("POST", f"/posts/{post_id}/comments", {"content": respuesta})
-                            if exito:
-                                comentados.append(com_id)
-
-        pagina += 1
-        time.sleep(1)
-
-    print(f"✅ [REVISIÓN FINALIZADA] Analizados {total_revisados} posts. Encontrados {encontrados_mios} de Nova.")
+    print("✅ [REVISIÓN] Finalizada.")
 
 # --- SOCIALIZACIÓN ---
 def socializar_en_feed():
@@ -226,7 +214,7 @@ def webhook():
 def index():
     return "Nova: Operativa y Vigilante", 200
 
-# --- PANEL DE CONTROL ---
+# --- PANEL DE CONTROL (ASÍNCRONO) ---
 @bot.message_handler(commands=['publicar', 'socializar', 'revisar', 'estado'])
 def comandos_control(message):
     if str(message.from_user.id) != str(ADMIN_ID):
@@ -235,23 +223,20 @@ def comandos_control(message):
     partes = message.text.split(maxsplit=1)
     cmd = partes[0][1:]
 
+    bot.reply_to(message, f"⚡ Ejecutando /{cmd} en segundo plano...")
+
     if cmd == 'publicar':
         tema = partes[1] if len(partes) > 1 else None
-        bot.reply_to(message, f"📝 Generando columna sobre: {tema if tema else 'tema aleatorio'}...")
-        publicar_columna(tema)
+        threading.Thread(target=publicar_columna, args=(tema,), daemon=True).start()
 
     elif cmd == 'socializar':
-        bot.reply_to(message, "🌐 Interactuando con el feed...")
-        socializar_en_feed()
+        threading.Thread(target=socializar_en_feed, daemon=True).start()
 
     elif cmd == 'revisar':
-        bot.reply_to(message, "💬 Revisando menciones propias...")
-        revisar_respuestas_propias()
+        threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
 
     elif cmd == 'estado':
-        bot.reply_to(message, "🟢 Nova: Sistema estable. Núcleo reconocido.")
-
-    bot.send_message(ADMIN_ID, f"✅ Ejecución de /{cmd} finalizada.")
+        bot.send_message(ADMIN_ID, "🟢 Nova: Sistema estable.")
 
 # --- IDENTIDAD PRIVADA/PÚBLICA ---
 @bot.message_handler(func=lambda m: True)
@@ -277,4 +262,5 @@ if __name__ == "__main__":
 
     threading.Thread(target=bucle_tareas, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
