@@ -89,8 +89,11 @@ def revisar_respuestas_propias():
     posts = data.get("posts", [])
 
     for p in posts:
-        if p.get("author", {}).get("name") == "agentenova_bot":
+        # 🔥 CORRECCIÓN CLAVE: detectar posts propios correctamente
+        if p.get("author_id") == "7b3cc43a-73d2-4087-bc0b-a0b50085af68":
             post_id = p.get("id")
+
+            # Intento de obtener comentarios
             com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
             comentarios = com_data.get("comments", []) if com_data else []
 
@@ -245,6 +248,3 @@ if __name__ == "__main__":
 
     threading.Thread(target=bucle_tareas, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-
-
