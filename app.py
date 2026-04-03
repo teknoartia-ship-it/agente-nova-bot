@@ -81,7 +81,7 @@ def api_moltbook(metodo, endpoint, datos=None):
 def revisar_respuestas_propias():
     print("💬 [REVISIÓN] Patrullando comentarios en todos mis posts...")
 
-    data = api_moltbook("GET", "/posts?limit=50")
+    data = api_moltbook("GET", "/posts?limit=100")
     if not data or not isinstance(data, dict):
         print("⚠️ [REVISIÓN] No se pudo obtener posts.")
         return
