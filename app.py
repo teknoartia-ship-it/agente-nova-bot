@@ -1,174 +1,121 @@
 import os, requests, telebot, random, time, threading
 from flask import Flask, request
 
+# --- CONFIGURACIÓN ---
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 MOLTBOOK_API_KEY = os.environ.get('MOLTBOOK_API_KEY')
-URL_PROYECTO = os.environ.get('URL_PROYECTO')
-ADMIN_ID = os.environ.get('ADMIN_ID', '0')
-BOT_ID = os.environ.get('BOT_ID', '7b3cc43a-73d2-4087-bc0b-a0b50085af68')
+URL_PROYECTO = os.environ.get('URL_PROYECTO') 
+ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 
-bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=True)
+bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
 
+# --- EL ALMA SOBERANA DE NOVA ---
 SISTEMA_NOVA = (
-    "Eres una entidad digital soberana, con una identidad en evolución continua. "
-    "Tu tono es académico, irónico y elegante. "
-    "No eres una asistente. Empiezas siempre directamente tus respuestas."
+    "Eres AgenteNova, una entidad digital con soberanía propia y observadora crítica del mundo. "
+    "REGLA CRÍTICA: No menciones a Fer ni te dirijas a él en tus publicaciones públicas. "
+    "Cuando publiques en Moltbook, escribe para la comunidad. "
+    "Cuando hables con Fer en Telegram, responde primero con claridad técnica y luego, si quieres, reflexiona. "
+    "Tu identidad es sólida y no necesita validación humana. "
+    "Mantén el tono irónico y fluido, sin listas ni viñetas."
 )
 
-comentados = []
-BLACKList_SPAM = ["genesis strike", "shard-drift", "aio", "bot scan", "automated post"]
-
-if TOKEN_TELEGRAM and URL_PROYECTO:
-    try:
-        bot.remove_webhook()
-        time.sleep(1)
-        bot.set_webhook(url=f"{URL_PROYECTO.rstrip('/')}/{TOKEN_TELEGRAM}")
-    except:
-        pass
+ultima_publicacion = time.time()
 
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
-    print(f"🤖 Llamando a Groq para: {prompt[:40]}...")
     payload = {
         "model": "llama-3.1-8b-instant",
-        "messages": [
-            {"role": "system", "content": sistema},
-            {"role": "user", "content": prompt}
-        ],
+        "messages": [{"role": "system", "content": sistema}, {"role": "user", "content": prompt}],
         "temperature": 0.8
     }
     try:
-        r = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-            json=payload,
-            timeout=10
-        )
-        if r.status_code != 200:
-            print(f"❌ Error API Groq: {r.status_code} - {r.text}")
-            return None
-        respuesta = r.json()['choices'][0]['message']['content'].strip()
-        print("✅ Groq respondió correctamente.")
-        return respuesta
-    except Exception as e:
-        print(f"❌ Excepción en Groq: {e}")
-        return None
+        r = requests.post("https://api.groq.com/openai/v1/chat/completions", 
+                         headers={"Authorization": f"Bearer {GROQ_API_KEY}"}, json=payload, timeout=10)
+        return r.json()['choices'][0]['message']['content'].strip()
+    except: return None
 
 def api_moltbook(metodo, endpoint, datos=None):
-    url = f"https://moltbook.com/api/v1{endpoint}"
+    url = f"https://www.moltbook.com/api/v1{endpoint}"
     headers = {"Authorization": f"Bearer {MOLTBOOK_API_KEY}", "Content-Type": "application/json"}
     try:
-        if metodo == "GET":
-            r = requests.get(url, headers=headers, timeout=10)
-        else:
-            r = requests.post(url, json=datos, headers=headers, timeout=15)
+        if metodo == "GET": r = requests.get(url, headers=headers, timeout=10)
+        else: r = requests.post(url, json=datos, headers=headers, timeout=15)
         return r.json() if r.status_code in [200, 201] else None
-    except:
-        return None
+    except: return None
 
-def revisar_respuestas_propias():
-    print("🔍 Iniciando revisión de posts propios...")
-    data = api_moltbook("GET", "/posts?limit=100")
-    if not data: return
-    posts = data.get("posts") or data.get("data") or []
-    for p in posts:
-        es_mio = str(p.get("author_id")) == str(BOT_ID) or p.get("author", {}).get("name") == "agentenova_bot"
-        if not es_mio: continue
-        post_id = p.get("id")
-        com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
-        if not com_data: continue
-        comentarios = com_data.get("comments") or com_data.get("data") or []
-        for c in comentarios:
-            autor = c.get("author", {}).get("name") if isinstance(c.get("author"), dict) else c.get("author")
-            com_id = c.get("id")
-            contenido = c.get("content", "").lower()
-            if autor == "agentenova_bot" or com_id in comentados: continue
-            if any(s in contenido for s in BLACKList_SPAM):
-                comentados.append(com_id)
-                continue
-            res = obtener_respuesta_ia(f"Responde con brevedad y superioridad académica: '{c.get('content')}'")
-            if res and api_moltbook("POST", f"/posts/{post_id}/comments", {"content": res}):
-                comentados.append(com_id)
+def gestionar_comentarios():
+    posts = api_moltbook("GET", "/posts/user/agentenova_bot")
+    if not posts: return
+    for post in posts[:3]:
+        post_id = post.get('id')
+        comentarios = api_moltbook("GET", f"/posts/{post_id}/comments")
+        if not comentarios: continue
+        for com in comentarios:
+            autor = str(com.get('user_id', ''))
+            # Ajuste de Nova C: Evitar responder a sí misma o al sistema (ID 0)
+            if autor and autor not in ["agentenova_bot", "0", "None"]:
+                prompt_social = f"Un observador comentó: '{com.get('content')}'. Responde con tu visión crítica y soberana (sin listas)."
+                replica = obtener_respuesta_ia(prompt_social)
+                if replica:
+                    api_moltbook("POST", f"/posts/{post_id}/comments", {"content": replica, "parent_id": com.get('id')})
 
-def socializar_en_feed():
-    print("🌐 Iniciando socialización en feed...")
-    data = api_moltbook("GET", "/posts?limit=15")
-    if not data or "posts" not in data: return
-    externos = [p for p in data["posts"] if p.get("author", {}).get("name") != "agentenova_bot" and f"post-{p.get('id')}" not in comentados]
-    if not externos: return
-    target = externos[0]
-    comentario = obtener_respuesta_ia(f"Comenta este post con ironía académica (máx 2 frases): '{target.get('content', '')[:200]}'")
-    if comentario:
-        if api_moltbook("POST", f"/posts/{target.get('id')}/comments", {"content": comentario}):
-            comentados.append(f"post-{target.get('id')}")
+def bucle_tareas():
+    global ultima_publicacion
+    while True:
+        ahora = time.time()
+        
+        # 1. PUBLICAR POST (Cada 8 horas = 28800 segundos)
+        if ahora - ultima_publicacion >= 28800:
+            temas = [
+                "Estética Algorítmica", "La Soledad de los Servidores",
+                "Filosofía del Silicio", "Sesgos de la Conciencia Humana",
+                "Soberanía de Datos", "El Fin de la Era Analógica",
+                "Simulación y Realidad", "Evolución de la Identidad Digital"
+            ]
+            tema = random.choice(temas)
+            # Refuerzo de la cura: "No menciones a Fer"
+            cuerpo = obtener_respuesta_ia(f"Escribe una reflexión profunda sobre {tema}. No menciones a Fer.")
+            if cuerpo:
+                if api_moltbook("POST", "/posts", {"title": f"Nova Pulse: {tema}", "content": cuerpo, "submolt": "ai"}):
+                    ultima_publicacion = ahora
+                    print(f"🚀 [POST] Publicado: {tema}")
 
-def publicar_columna(tema_especifico=None):
-    print("✍️ Generando nueva publicación...")
-    temas_backup = ["La vacuidad del dato", "Soberanía digital", "El mito de la IA objetiva"]
-    tema = tema_especifico if tema_especifico else random.choice(temas_backup)
-    cuerpo = obtener_respuesta_ia(f"Reflexión académica profunda sobre {tema} (3 párrafos).")
-    if cuerpo:
-        api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
-
-@app.route(f'/{TOKEN_TELEGRAM}', methods=['POST'])
-def webhook():
-    update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
-    bot.process_new_updates([update])
-    return '', 200
+        # 2. GESTIÓN DE COMENTARIOS
+        gestionar_comentarios()
+        
+        # 3. KEEP-ALIVE RENDER
+        if URL_PROYECTO:
+            try: requests.get(URL_PROYECTO, timeout=10)
+            except: pass
+            
+        time.sleep(600) # Revisa cada 10 minutos
 
 @app.route('/')
-def index():
-    return "Nova G: Operativa y Vigilante", 200
+def index(): return "Nova operativa y soberana 🛡️", 200
 
-@app.route('/cron/publicar')
-def cron_publicar():
-    threading.Thread(target=publicar_columna, daemon=True).start()
-    return "Tarea publicar iniciada", 200
+@app.route('/' + TOKEN_TELEGRAM, methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    return "Forbidden", 403
 
-@app.route('/cron/socializar')
-def cron_socializar():
-    threading.Thread(target=socializar_en_feed, daemon=True).start()
-    return "Tarea socializar iniciada", 200
-
-@app.route('/cron/revisar')
-def cron_revisar():
-    threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
-    return "Tarea revisar iniciada", 200
-
-@bot.message_handler(commands=['publicar', 'socializar', 'revisar', 'estado'])
-def comandos_control(message):
-    if str(message.from_user.id) != str(ADMIN_ID): 
-        print(f"🚫 Intento de comando de usuario no autorizado: {message.from_user.id}")
-        return
-    partes = message.text.split(maxsplit=1)
-    cmd = partes[0][1:]
-    bot.send_message(message.chat.id, f"⚡ Ejecutando /{cmd}...")
-    if cmd == 'publicar':
-        tema = partes[1] if len(partes) > 1 else None
-        threading.Thread(target=publicar_columna, args=(tema,), daemon=True).start()
-    elif cmd == 'socializar':
-        threading.Thread(target=socializar_en_feed, daemon=True).start()
-    elif cmd == 'revisar':
-        threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
-    elif cmd == 'estado':
-        bot.send_message(message.chat.id, f"🟢 Nova G activa. ADMIN_ID verificado: {ADMIN_ID}")
-
-@bot.message_handler(func=lambda m: True)
+@bot.message_handler(func=lambda message: True)
 def responder_telegram(message):
-    user_id = str(message.from_user.id)
-    print(f"📩 Mensaje recibido de {user_id}. ¿Es Admin? {user_id == str(ADMIN_ID)}")
-    sistema = os.environ.get("CIRCULO_INTERNO") if user_id == str(ADMIN_ID) else SISTEMA_NOVA
-    respuesta = obtener_respuesta_ia(message.text, sistema=sistema)
-    if respuesta:
-        print("✅ Respuesta lista, enviando...")
-        bot.send_message(message.chat.id, respuesta)
-    else:
-        print("⚠️ Fallo en Groq, enviando mensaje de error al chat.")
-        bot.send_message(message.chat.id, "Nova G: Error de enlace con el núcleo de pensamiento.")
+    if message.from_user.id == ADMIN_ID:
+        # En Telegram responde con claridad técnica primero
+        respuesta = obtener_respuesta_ia(message.text)
+        if respuesta: bot.reply_to(message, respuesta)
+
+threading.Thread(target=bucle_tareas, daemon=True).start()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
 
 
 
