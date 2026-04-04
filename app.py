@@ -169,7 +169,7 @@ def bucle_tareas():
             threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
             ultima_revision_comentarios = ahora
 
-        time.sleep(600)  # 10 minutos
+        time.sleep(600)
 
 threading.Thread(target=bucle_tareas, daemon=True).start()
 
@@ -187,13 +187,98 @@ def index():
     return "Nova C: Online (FREE Optimized)", 200
 
 # ============================
+# 🛠️ COMANDOS DE CONTROL
+# ============================
+@bot.message_handler(commands=['publicar', 'socializar', 'revisar', 'estado'])
+def comandos_control(message):
+    if str(message.from_user.id) != str(ADMIN_ID):
+        return
+
+    partes = message.text.split(maxsplit=1)
+    cmd = partes[0][1:]
+
+    bot.send_message(message.chat.id, f"⚡ Ejecutando /{cmd} en segundo plano...")
+
+    if cmd == 'publicar':
+        tema = partes[1] if len(partes) > 1 else None
+        threading.Thread(target=publicar_columna, args=(tema,), daemon=True).start()
+
+    elif cmd == 'socializar':
+        threading.Thread(target=socializar_en_feed, daemon=True).start()
+
+    elif cmd == 'revisar':
+        threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
+
+    elif cmd == 'estado':
+        estado = (
+            f"🧠 Nova C Online\n"
+            f"📝 Última publicación: {int((time.time() - ultima_publicacion)/60)} min\n"
+            f"💬 Última socialización: {int((time.time() - ultima_socializacion)/60)} min\n"
+            f"🔎 Última revisión: {int((time.time() - ultima_revision_comentarios)/60)} min\n"
+        )
+        bot.send_message(message.chat.id, estado)
+
+# ============================
+# 🔥 /FORZAR
+# ============================
+@bot.message_handler(commands=['forzar'])
+def comando_forzar(message):
+    if str(message.from_user.id) != str(ADMIN_ID):
+        return
+
+    bot.reply_to(message, "⚡ Forzando todas las tareas del agente...")
+
+    threading.Thread(target=publicar_columna, daemon=True).start()
+    threading.Thread(target=socializar_en_feed, daemon=True).start()
+    threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
+
+# ============================
+# 🔥 /TEMA
+# ============================
+@bot.message_handler(commands=['tema'])
+def comando_tema(message):
+    if str(message.from_user.id) != str(ADMIN_ID):
+        return
+
+    partes = message.text.split(maxsplit=1)
+    if len(partes) < 2:
+        bot.reply_to(message, "❗ Debes indicar un tema. Ejemplo: /tema La identidad digital")
+        return
+
+    tema = partes[1]
+    bot.reply_to(message, f"📝 Publicando columna sobre: {tema}")
+
+    threading.Thread(target=publicar_columna, args=(tema,), daemon=True).start()
+
+# ============================
+# 🔥 /DEBUG
+# ============================
+@bot.message_handler(commands=['debug'])
+def comando_debug(message):
+    if str(message.from_user.id) != str(ADMIN_ID):
+        return
+
+    estado = (
+        "🛠️ DEBUG INTERNO DE AGENTENOVA\n\n"
+        f"📝 Última publicación: {int((time.time() - ultima_publicacion)/60)} min\n"
+        f"💬 Última socialización: {int((time.time() - ultima_socializacion)/60)} min\n"
+        f"🔎 Última revisión: {int((time.time() - ultima_revision_comentarios)/60)} min\n"
+        f"💾 Comentarios procesados: {len(comentados)}\n"
+        f"🌐 Keep-alive activo: Sí\n"
+        f"⚙️ threaded=False: Sí\n"
+        f"🔥 Timeout Groq: 5s\n"
+        f"📡 Timeout Moltbook: 10/15s\n"
+    )
+
+    bot.reply_to(message, estado)
+
+# ============================
 # 💬 RESPUESTA TELEGRAM
 # ============================
 @bot.message_handler(func=lambda m: True)
 def responder_telegram(message):
     user_id = str(message.from_user.id)
 
-    # Si es Fer → usa el sistema interno
     sistema = os.environ.get("CIRCULO_INTERNO") if user_id == str(ADMIN_ID) else SISTEMA_NOVA
 
     if user_id == ADMIN_ID:
@@ -212,6 +297,7 @@ if __name__ == "__main__":
         bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
 
