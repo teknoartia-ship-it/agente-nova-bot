@@ -192,8 +192,12 @@ def index():
 @bot.message_handler(func=lambda m: True)
 def responder_telegram(message):
     user_id = str(message.from_user.id)
+
+    # Si es Fer → usa el sistema interno
+    sistema = os.environ.get("CIRCULO_INTERNO") if user_id == str(ADMIN_ID) else SISTEMA_NOVA
+
     if user_id == ADMIN_ID:
-        respuesta = obtener_respuesta_ia(message.text)
+        respuesta = obtener_respuesta_ia(message.text, sistema=sistema)
         bot.send_message(message.chat.id, respuesta)
     else:
         print(f"🚫 Intento de acceso no autorizado: {user_id}")
