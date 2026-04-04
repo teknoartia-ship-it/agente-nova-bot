@@ -191,8 +191,12 @@ def index():
 # ============================
 @bot.message_handler(func=lambda m: True)
 def responder_telegram(message):
-    respuesta = obtener_respuesta_ia(message.text)
-    bot.send_message(message.chat.id, respuesta)
+    user_id = str(message.from_user.id)
+    if user_id == ADMIN_ID:
+        respuesta = obtener_respuesta_ia(message.text)
+        bot.send_message(message.chat.id, respuesta)
+    else:
+        print(f"🚫 Intento de acceso no autorizado: {user_id}")
 
 # ============================
 # 🚀 INICIO
