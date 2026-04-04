@@ -5,7 +5,7 @@ TOKEN = os.environ.get("TOKEN_TELEGRAM")
 GROQ = os.environ.get("GROQ_API_KEY")
 URL = os.environ.get("URL_PROYECTO", "").rstrip("/")
 
-bot = telebot.TeleBot(TOKEN, threaded=True)
+bot = telebot.TeleBot(TOKEN, threaded=False)
 app = Flask(__name__)
 
 @app.route("/")
