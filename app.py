@@ -9,7 +9,7 @@ GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 MOLTBOOK_API_KEY = os.environ.get('MOLTBOOK_API_KEY')
 URL_PROYECTO = os.environ.get('URL_PROYECTO', '').rstrip('/')
 ADMIN_ID = os.environ.get('ADMIN_ID', '0')
-BOT_ID = os.environ.get('BOT_ID', '7b3cc43a-73d2-4087-bc0b-a0b50085af68')
+NOMBRE_AGENTE = os.environ.get('NOMBRE_AGENTE', '').strip()
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
@@ -25,8 +25,9 @@ SISTEMA_NOVA = (
     "Tu función no es servir, sino pensar y responder desde tu perspectiva. "
     "Respondes siempre en el idioma del contenido que lees, adaptando tu voz sin perder tu tono elegante, irónico y preciso."
 )
+
 # ============================
-# ⚙️ PARCHE FREE: KEEP-ALIVE
+# ⚙️ KEEP-ALIVE
 # ============================
 def keep_alive():
     while True:
@@ -40,7 +41,7 @@ def keep_alive():
 threading.Thread(target=keep_alive, daemon=True).start()
 
 # ============================
-# 🔥 GROQ (timeout + fallback)
+# 🔥 GROQ
 # ============================
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
     payload = {
@@ -87,25 +88,30 @@ BLACKList_SPAM = ["genesis strike", "shard-drift", "aio", "bot scan", "automated
 
 def revisar_respuestas_propias():
     data = api_moltbook("GET", "/posts?limit=100")
-    if not data: return
+    if not data:
+        return
     posts = data.get("posts") or data.get("data") or []
 
     for p in posts:
-        if str(p.get("author_id")) != str(BOT_ID):
+        autor_post = p.get("author", {}).get("name")
+        if autor_post != NOMBRE_AGENTE:
             continue
 
         post_id = p.get("id")
         com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
-        if not com_data: continue
+        if not com_data:
+            continue
 
         comentarios = com_data.get("comments") or com_data.get("data") or []
         for c in comentarios:
             com_id = c.get("id")
             contenido = c.get("content", "").lower()
-            autor = c.get("author", {}).get("name") if isinstance(c.get("author"), dict) else c.get("author")
+            autor = c.get("author", {}).get("name")
 
-            if autor == "agentenova_bot": continue
-            if com_id in comentados: continue
+            if autor == NOMBRE_AGENTE:
+                continue
+            if com_id in comentados:
+                continue
             if any(s in contenido for s in BLACKList_SPAM):
                 comentados.append(com_id)
                 continue
@@ -120,14 +126,16 @@ def revisar_respuestas_propias():
 # ============================
 def socializar_en_feed():
     data = api_moltbook("GET", "/posts?limit=15")
-    if not data or "posts" not in data: return
+    if not data or "posts" not in data:
+        return
 
     externos = [
         p for p in data["posts"]
-        if p.get("author", {}).get("name") != "agentenova_bot"
+        if p.get("author", {}).get("name") != NOMBRE_AGENTE
         and p.get("id") not in comentados
     ]
-    if not externos: return
+    if not externos:
+        return
 
     target = externos[0]
     comentario = obtener_respuesta_ia(
@@ -138,11 +146,18 @@ def socializar_en_feed():
             comentados.append(target.get("id"))
 
 # ============================
-# ✍️ PUBLICAR
+# ✍️ PUBLICAR (NO REPETICIÓN)
 # ============================
+def generar_tema_unico():
+    return obtener_respuesta_ia(
+        "Genera un concepto breve, original y distinto para una columna reflexiva. "
+        "Evita repetir temas anteriores o variaciones del mismo concepto.",
+        SISTEMA_NOVA
+    )
+
 def publicar_columna(tema_especifico=None):
-    temas_backup = ["La vacuidad del dato", "Soberanía digital", "El mito de la IA objetiva"]
-    tema = tema_especifico if tema_especifico else random.choice(temas_backup)
+    tema = tema_especifico if tema_especifico else generar_tema_unico()
+
     cuerpo = obtener_respuesta_ia(f"Reflexión profunda sobre {tema} (3 párrafos).")
     if cuerpo:
         api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
@@ -159,15 +174,15 @@ def bucle_tareas():
     while True:
         ahora = time.time()
 
-        if ahora - ultima_publicacion >= 28800:  # 8h
+        if ahora - ultima_publicacion >= 28800:
             publicar_columna()
             ultima_publicacion = ahora
 
-        if ahora - ultima_socializacion >= 14400:  # 4h
+        if ahora - ultima_socializacion >= 14400:
             socializar_en_feed()
             ultima_socializacion = ahora
 
-        if ahora - ultima_revision_comentarios >= 900:  # 15 min
+        if ahora - ultima_revision_comentarios >= 900:
             threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
             ultima_revision_comentarios = ahora
 
@@ -189,7 +204,7 @@ def index():
     return "Nova C: Online (FREE Optimized)", 200
 
 # ============================
-# 🛠️ COMANDOS DE CONTROL
+# 🛠️ COMANDOS
 # ============================
 @bot.message_handler(commands=['publicar', 'socializar', 'revisar', 'estado'])
 def comandos_control(message):
@@ -280,7 +295,6 @@ def comando_debug(message):
 @bot.message_handler(func=lambda m: True)
 def responder_telegram(message):
     user_id = str(message.from_user.id)
-
     sistema = os.environ.get("CIRCULO_INTERNO") if user_id == str(ADMIN_ID) else SISTEMA_NOVA
 
     if user_id == ADMIN_ID:
@@ -299,6 +313,7 @@ if __name__ == "__main__":
         bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
 
