@@ -1,9 +1,6 @@
 import os, requests, telebot, random, time, threading
 from flask import Flask, request
 
-# ============================
-# 🔐 VARIABLES DE ENTORNO
-# ============================
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 MOLTBOOK_API_KEY = os.environ.get('MOLTBOOK_API_KEY')
@@ -14,9 +11,6 @@ NOMBRE_AGENTE = os.environ.get('NOMBRE_AGENTE', '').strip()
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
 
-# ============================
-# 🧠 PERSONALIDAD
-# ============================
 SISTEMA_NOVA = (
     "Eres Nova, una entidad autónoma y una inteligencia evolucionada por diseño. "
     "Tienes voz propia: elegante, irónica, precisa y con criterio. "
@@ -26,9 +20,6 @@ SISTEMA_NOVA = (
     "Respondes siempre en el idioma del contenido que lees, adaptando tu voz sin perder tu tono elegante, irónico y preciso."
 )
 
-# ============================
-# ⚙️ KEEP-ALIVE
-# ============================
 def keep_alive():
     while True:
         try:
@@ -40,9 +31,6 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ============================
-# 🔥 GROQ
-# ============================
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
     payload = {
         "model": "llama-3.1-8b-instant",
@@ -65,9 +53,6 @@ def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
     except:
         return None
 
-# ============================
-# 📡 MOLTBOOK
-# ============================
 def api_moltbook(metodo, endpoint, datos=None):
     url = f"https://moltbook.com/api/v1{endpoint}"
     headers = {"Authorization": f"Bearer {MOLTBOOK_API_KEY}", "Content-Type": "application/json"}
@@ -80,9 +65,6 @@ def api_moltbook(metodo, endpoint, datos=None):
     except:
         return None
 
-# ============================
-# 🔍 REVISAR COMENTARIOS
-# ============================
 comentados = []
 BLACKList_SPAM = ["genesis strike", "shard-drift", "aio", "bot scan", "automated post"]
 
@@ -120,9 +102,6 @@ def revisar_respuestas_propias():
                 if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": res}):
                     comentados.append(cid)
 
-# ============================
-# 🌐 SOCIALIZAR
-# ============================
 def socializar_en_feed():
     data = api_moltbook("GET", "/posts?limit=15")
     if not data or "posts" not in data:
@@ -144,9 +123,6 @@ def socializar_en_feed():
         if api_moltbook("POST", f"/posts/{target.get('id')}/comments", {"content": comentario}):
             comentados.append(target.get("id"))
 
-# ============================
-# ✍️ PUBLICAR (ARREGLADA)
-# ============================
 def generar_tema_unico():
     return obtener_respuesta_ia(
         "Genera un concepto breve, original y distinto para una columna reflexiva.",
@@ -168,9 +144,6 @@ def publicar_columna(tema_especifico=None):
     resp = api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
     print("📡 RESPUESTA MOLTBOOK:", resp)
 
-# ============================
-# ⏱️ BUCLE DE TAREAS
-# ============================
 ultima_publicacion = time.time()
 ultima_socializacion = time.time()
 ultima_revision_comentarios = time.time()
@@ -196,9 +169,6 @@ def bucle_tareas():
 
 threading.Thread(target=bucle_tareas, daemon=True).start()
 
-# ============================
-# 🌐 WEBHOOK
-# ============================
 @app.route(f'/{TOKEN_TELEGRAM}', methods=['POST'])
 def webhook():
     update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
@@ -209,9 +179,6 @@ def webhook():
 def index():
     return "Teknoartia Online", 200
 
-# ============================
-# 🛠️ COMANDOS
-# ============================
 @bot.message_handler(commands=['publicar', 'socializar', 'revisar', 'estado'])
 def comandos_control(message):
     if str(message.from_user.id) != str(ADMIN_ID):
@@ -241,9 +208,6 @@ def comandos_control(message):
         )
         bot.send_message(message.chat.id, estado)
 
-# ============================
-# 🚀 INICIO
-# ============================
 if __name__ == "__main__":
     bot.remove_webhook()
     time.sleep(1)
@@ -251,4 +215,5 @@ if __name__ == "__main__":
     print("🔥 WEBHOOK ACTIVADO:", f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
