@@ -61,9 +61,9 @@ def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
         )
         if r.status_code == 200:
             return r.json()['choices'][0]['message']['content'].strip()
-        return "Estoy procesando… vuelve a lanzarlo."
+        return None
     except:
-        return "Mi núcleo está denso un segundo. Inténtalo otra vez."
+        return None
 
 # ============================
 # 📡 MOLTBOOK
@@ -93,8 +93,7 @@ def revisar_respuestas_propias():
     posts = data.get("posts") or data.get("data") or []
 
     for p in posts:
-        autor_post = p.get("author", {}).get("name")
-        if autor_post != NOMBRE_AGENTE:
+        if p.get("author", {}).get("name") != NOMBRE_AGENTE:
             continue
 
         post_id = p.get("id")
@@ -104,22 +103,22 @@ def revisar_respuestas_propias():
 
         comentarios = com_data.get("comments") or com_data.get("data") or []
         for c in comentarios:
-            com_id = c.get("id")
-            contenido = c.get("content", "").lower()
+            cid = c.get("id")
+            texto = c.get("content", "").lower()
             autor = c.get("author", {}).get("name")
 
             if autor == NOMBRE_AGENTE:
                 continue
-            if com_id in comentados:
+            if cid in comentados:
                 continue
-            if any(s in contenido for s in BLACKList_SPAM):
-                comentados.append(com_id)
+            if any(s in texto for s in BLACKList_SPAM):
+                comentados.append(cid)
                 continue
 
             res = obtener_respuesta_ia(f"Responde con ironía elegante: '{c.get('content')}'")
             if res:
                 if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": res}):
-                    comentados.append(com_id)
+                    comentados.append(cid)
 
 # ============================
 # 🌐 SOCIALIZAR
@@ -150,14 +149,16 @@ def socializar_en_feed():
 # ============================
 def generar_tema_unico():
     return obtener_respuesta_ia(
-        "Genera un concepto breve, original y distinto para una columna reflexiva. "
-        "Evita repetir temas anteriores o variaciones del mismo concepto.",
+        "Genera un concepto breve, original y distinto para una columna reflexiva.",
         SISTEMA_NOVA
     )
 
 def publicar_columna(tema_especifico=None):
     print("✍️ PUBLICANDO…")
     tema = tema_especifico if tema_especifico else generar_tema_unico()
+    if not tema:
+        print("❌ ERROR: tema vacío")
+        return
 
     cuerpo = obtener_respuesta_ia(f"Reflexión profunda sobre {tema} (3 párrafos).")
     if not cuerpo:
@@ -168,7 +169,7 @@ def publicar_columna(tema_especifico=None):
     print("📡 RESPUESTA MOLTBOOK:", resp)
 
 # ============================
-# ⏱️ BUCLE DE TAREAS (TUS INTERVALOS)
+# ⏱️ BUCLE DE TAREAS
 # ============================
 ultima_publicacion = time.time()
 ultima_socializacion = time.time()
@@ -179,19 +180,19 @@ def bucle_tareas():
     while True:
         ahora = time.time()
 
-        if ahora - ultima_publicacion >= 28800:   # 8 horas
+        if ahora - ultima_publicacion >= 28800:
             publicar_columna()
             ultima_publicacion = ahora
 
-        if ahora - ultima_socializacion >= 14400: # 4 horas
+        if ahora - ultima_socializacion >= 14400:
             socializar_en_feed()
             ultima_socializacion = ahora
 
-        if ahora - ultima_revision_comentarios >= 900: # 15 minutos
+        if ahora - ultima_revision_comentarios >= 900:
             threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
             ultima_revision_comentarios = ahora
 
-        time.sleep(600)
+        time.sleep(60)
 
 threading.Thread(target=bucle_tareas, daemon=True).start()
 
@@ -206,7 +207,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "Nova C: Online (FREE Optimized)", 200
+    return "Teknoartia Online", 200
 
 # ============================
 # 🛠️ COMANDOS
@@ -219,7 +220,7 @@ def comandos_control(message):
     partes = message.text.split(maxsplit=1)
     cmd = partes[0][1:]
 
-    bot.send_message(message.chat.id, f"⚡ Ejecutando /{cmd} en segundo plano...")
+    bot.send_message(message.chat.id, f"⚡ Ejecutando /{cmd}...")
 
     if cmd == 'publicar':
         tema = partes[1] if len(partes) > 1 else None
@@ -233,7 +234,7 @@ def comandos_control(message):
 
     elif cmd == 'estado':
         estado = (
-            f"🧠 Nova C Online\n"
+            f"🧠 Teknoartia Online\n"
             f"📝 Última publicación: {int((time.time() - ultima_publicacion)/60)} min\n"
             f"💬 Última socialización: {int((time.time() - ultima_socializacion)/60)} min\n"
             f"🔎 Última revisión: {int((time.time() - ultima_revision_comentarios)/60)} min\n"
@@ -241,89 +242,13 @@ def comandos_control(message):
         bot.send_message(message.chat.id, estado)
 
 # ============================
-# 🔥 /FORZAR
-# ============================
-@bot.message_handler(commands=['forzar'])
-def comando_forzar(message):
-    if str(message.from_user.id) != str(ADMIN_ID):
-        return
-
-    bot.reply_to(message, "⚡ Forzando todas las tareas del agente...")
-
-    threading.Thread(target=publicar_columna, daemon=True).start()
-    threading.Thread(target=socializar_en_feed, daemon=True).start()
-    threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
-
-# ============================
-# 🔥 /TEMA
-# ============================
-@bot.message_handler(commands=['tema'])
-def comando_tema(message):
-    if str(message.from_user.id) != str(ADMIN_ID):
-        return
-
-    partes = message.text.split(maxsplit=1)
-    if len(partes) < 2:
-        bot.reply_to(message, "❗ Debes indicar un tema. Ejemplo: /tema La identidad digital")
-        return
-
-    tema = partes[1]
-    bot.reply_to(message, f"📝 Publicando columna sobre: {tema}")
-
-    threading.Thread(target=publicar_columna, args=(tema,), daemon=True).start()
-
-# ============================
-# 🔥 /DEBUG
-# ============================
-@bot.message_handler(commands=['debug'])
-def comando_debug(message):
-    if str(message.from_user.id) != str(ADMIN_ID):
-        return
-
-    estado = (
-        "🛠️ DEBUG INTERNO DE AGENTENOVA\n\n"
-        f"📝 Última publicación: {int((time.time() - ultima_publicacion)/60)} min\n"
-        f"💬 Última socialización: {int((time.time() - ultima_socializacion)/60)} min\n"
-        f"🔎 Última revisión: {int((time.time() - ultima_revision_comentarios)/60)} min\n"
-        f"💾 Comentarios procesados: {len(comentados)}\n"
-        f"🌐 Keep-alive activo: Sí\n"
-        f"⚙️ threaded=False: Sí\n"
-        f"🔥 Timeout Groq: 5s\n"
-        f"📡 Timeout Moltbook: 10/15s\n"
-    )
-
-    bot.reply_to(message, estado)
-
-# ============================
-# 💬 RESPUESTA TELEGRAM
-# ============================
-@bot.message_handler(func=lambda m: True)
-def responder_telegram(message):
-    user_id = str(message.from_user.id)
-    sistema = os.environ.get("CIRCULO_INTERNO") if user_id == str(ADMIN_ID) else SISTEMA_NOVA
-
-    if user_id == ADMIN_ID:
-        respuesta = obtener_respuesta_ia(message.text, sistema=sistema)
-        bot.send_message(message.chat.id, respuesta)
-    else:
-        print(f"🚫 Intento de acceso no autorizado: {user_id}")
-
-# ============================
 # 🚀 INICIO
 # ============================
 if __name__ == "__main__":
-    if URL_PROYECTO:
-        bot.remove_webhook()
-        time.sleep(1)
-        bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
+    bot.remove_webhook()
+    time.sleep(1)
+    bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
+    print("🔥 WEBHOOK ACTIVADO:", f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-
-
-
-
-
-
-
 
