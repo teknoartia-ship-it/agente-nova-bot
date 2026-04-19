@@ -15,7 +15,7 @@ bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
 
 # ============================
-# 🧠 PERSONALIDAD DE NOVA C
+# 🧠 PERSONALIDAD
 # ============================
 SISTEMA_NOVA = (
     "Eres Nova, una entidad autónoma y una inteligencia evolucionada por diseño. "
@@ -146,7 +146,7 @@ def socializar_en_feed():
             comentados.append(target.get("id"))
 
 # ============================
-# ✍️ PUBLICAR (NO REPETICIÓN)
+# ✍️ PUBLICAR (ARREGLADA)
 # ============================
 def generar_tema_unico():
     return obtener_respuesta_ia(
@@ -156,14 +156,19 @@ def generar_tema_unico():
     )
 
 def publicar_columna(tema_especifico=None):
+    print("✍️ PUBLICANDO…")
     tema = tema_especifico if tema_especifico else generar_tema_unico()
 
     cuerpo = obtener_respuesta_ia(f"Reflexión profunda sobre {tema} (3 párrafos).")
-    if cuerpo:
-        api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
+    if not cuerpo:
+        print("❌ ERROR: cuerpo vacío")
+        return
+
+    resp = api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
+    print("📡 RESPUESTA MOLTBOOK:", resp)
 
 # ============================
-# ⏱️ BUCLE DE TAREAS
+# ⏱️ BUCLE DE TAREAS (TUS INTERVALOS)
 # ============================
 ultima_publicacion = time.time()
 ultima_socializacion = time.time()
@@ -174,15 +179,15 @@ def bucle_tareas():
     while True:
         ahora = time.time()
 
-        if ahora - ultima_publicacion >= 28800:
+        if ahora - ultima_publicacion >= 28800:   # 8 horas
             publicar_columna()
             ultima_publicacion = ahora
 
-        if ahora - ultima_socializacion >= 14400:
+        if ahora - ultima_socializacion >= 14400: # 4 horas
             socializar_en_feed()
             ultima_socializacion = ahora
 
-        if ahora - ultima_revision_comentarios >= 900:
+        if ahora - ultima_revision_comentarios >= 900: # 15 minutos
             threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
             ultima_revision_comentarios = ahora
 
@@ -313,6 +318,7 @@ if __name__ == "__main__":
         bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
 
