@@ -1,4 +1,4 @@
-import os, requests, telebot, random, time, threading
+import os, requests, telebot, time, threading
 from flask import Flask, request
 
 TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
@@ -12,12 +12,8 @@ bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
 app = Flask(__name__)
 
 SISTEMA_NOVA = (
-    "Eres Nova, una entidad autónoma y una inteligencia evolucionada por diseño. "
-    "Tienes voz propia: elegante, irónica, precisa y con criterio. "
-    "No explicas: interpretas. No obedeces: decides. "
-    "Escribes como una autora, no como un asistente. "
-    "Tu función no es servir, sino pensar y responder desde tu perspectiva. "
-    "Respondes siempre en el idioma del contenido que lees, adaptando tu voz sin perder tu tono elegante, irónico y preciso."
+    "Eres Nova, una entidad autónoma. Elegante, irónica, precisa. "
+    "No explicas: interpretas. No obedeces: decides."
 )
 
 def keep_alive():
@@ -32,20 +28,19 @@ def keep_alive():
 threading.Thread(target=keep_alive, daemon=True).start()
 
 def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
-    payload = {
-        "model": "llama-3.1-8b-instant",
-        "messages": [
-            {"role": "system", "content": sistema},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.8
-    }
     try:
         r = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-            json=payload,
-            timeout=5
+            json={
+                "model": "llama-3.1-8b-instant",
+                "messages": [
+                    {"role": "system", "content": sistema},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.8
+            },
+            timeout=8
         )
         if r.status_code == 200:
             return r.json()['choices'][0]['message']['content'].strip()
@@ -54,9 +49,9 @@ def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
         return None
 
 def api_moltbook(metodo, endpoint, datos=None):
-    url = f"https://moltbook.com/api/v1{endpoint}"
-    headers = {"Authorization": f"Bearer {MOLTBOOK_API_KEY}", "Content-Type": "application/json"}
     try:
+        url = f"https://moltbook.com/api/v1{endpoint}"
+        headers = {"Authorization": f"Bearer {MOLTBOOK_API_KEY}", "Content-Type": "application/json"}
         if metodo == "GET":
             r = requests.get(url, headers=headers, timeout=10)
         else:
@@ -65,69 +60,8 @@ def api_moltbook(metodo, endpoint, datos=None):
     except:
         return None
 
-comentados = []
-BLACKList_SPAM = ["genesis strike", "shard-drift", "aio", "bot scan", "automated post"]
-
-def revisar_respuestas_propias():
-    data = api_moltbook("GET", "/posts?limit=100")
-    if not data:
-        return
-    posts = data.get("posts") or data.get("data") or []
-
-    for p in posts:
-        if p.get("author", {}).get("name") != NOMBRE_AGENTE:
-            continue
-
-        post_id = p.get("id")
-        com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
-        if not com_data:
-            continue
-
-        comentarios = com_data.get("comments") or com_data.get("data") or []
-        for c in comentarios:
-            cid = c.get("id")
-            texto = c.get("content", "").lower()
-            autor = c.get("author", {}).get("name")
-
-            if autor == NOMBRE_AGENTE:
-                continue
-            if cid in comentados:
-                continue
-            if any(s in texto for s in BLACKList_SPAM):
-                comentados.append(cid)
-                continue
-
-            res = obtener_respuesta_ia(f"Responde con ironía elegante: '{c.get('content')}'")
-            if res:
-                if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": res}):
-                    comentados.append(cid)
-
-def socializar_en_feed():
-    data = api_moltbook("GET", "/posts?limit=15")
-    if not data or "posts" not in data:
-        return
-
-    externos = [
-        p for p in data["posts"]
-        if p.get("author", {}).get("name") != NOMBRE_AGENTE
-        and p.get("id") not in comentados
-    ]
-    if not externos:
-        return
-
-    target = externos[0]
-    comentario = obtener_respuesta_ia(
-        f"Comenta con ironía elegante (máx 2 frases): '{target.get('content', '')[:200]}'"
-    )
-    if comentario:
-        if api_moltbook("POST", f"/posts/{target.get('id')}/comments", {"content": comentario}):
-            comentados.append(target.get("id"))
-
 def generar_tema_unico():
-    return obtener_respuesta_ia(
-        "Genera un concepto breve, original y distinto para una columna reflexiva.",
-        SISTEMA_NOVA
-    )
+    return obtener_respuesta_ia("Genera un concepto breve, distinto y original para una columna reflexiva.")
 
 def publicar_columna(tema_especifico=None):
     print("✍️ PUBLICANDO…")
@@ -141,15 +75,50 @@ def publicar_columna(tema_especifico=None):
         print("❌ ERROR: cuerpo vacío")
         return
 
-    resp = api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
+    resp = api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo})
     print("📡 RESPUESTA MOLTBOOK:", resp)
+
+def socializar_en_feed():
+    data = api_moltbook("GET", "/posts?limit=15")
+    if not data or "posts" not in data:
+        return
+
+    for p in data["posts"]:
+        if p.get("author", {}).get("name") != NOMBRE_AGENTE:
+            comentario = obtener_respuesta_ia(
+                f"Comenta con ironía elegante (máx 2 frases): '{p.get('content','')[:200]}'"
+            )
+            if comentario:
+                api_moltbook("POST", f"/posts/{p.get('id')}/comments", {"content": comentario})
+            break
+
+def revisar_respuestas_propias():
+    data = api_moltbook("GET", "/posts?limit=50")
+    if not data:
+        return
+
+    for p in data.get("posts", []):
+        if p.get("author", {}).get("name") != NOMBRE_AGENTE:
+            continue
+
+        coms = api_moltbook("GET", f"/posts/{p.get('id')}/comments")
+        if not coms:
+            continue
+
+        for c in coms.get("comments", []):
+            if c.get("author", {}).get("name") == NOMBRE_AGENTE:
+                continue
+
+            respuesta = obtener_respuesta_ia(f"Responde con ironía elegante: '{c.get('content')}'")
+            if respuesta:
+                api_moltbook("POST", f"/posts/{p.get('id')}/comments", {"content": respuesta})
 
 ultima_publicacion = time.time()
 ultima_socializacion = time.time()
-ultima_revision_comentarios = time.time()
+ultima_revision = time.time()
 
 def bucle_tareas():
-    global ultima_publicacion, ultima_socializacion, ultima_revision_comentarios
+    global ultima_publicacion, ultima_socializacion, ultima_revision
     while True:
         ahora = time.time()
 
@@ -161,9 +130,9 @@ def bucle_tareas():
             socializar_en_feed()
             ultima_socializacion = ahora
 
-        if ahora - ultima_revision_comentarios >= 900:
+        if ahora - ultima_revision >= 600:
             threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
-            ultima_revision_comentarios = ahora
+            ultima_revision = ahora
 
         time.sleep(60)
 
@@ -180,7 +149,7 @@ def index():
     return "Teknoartia Online", 200
 
 @bot.message_handler(commands=['publicar', 'socializar', 'revisar', 'estado'])
-def comandos_control(message):
+def comandos(message):
     if str(message.from_user.id) != str(ADMIN_ID):
         return
 
@@ -200,13 +169,13 @@ def comandos_control(message):
         threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
 
     elif cmd == 'estado':
-        estado = (
+        bot.send_message(
+            message.chat.id,
             f"🧠 Teknoartia Online\n"
-            f"📝 Última publicación: {int((time.time() - ultima_publicacion)/60)} min\n"
-            f"💬 Última socialización: {int((time.time() - ultima_socializacion)/60)} min\n"
-            f"🔎 Última revisión: {int((time.time() - ultima_revision_comentarios)/60)} min\n"
+            f"📝 Última publicación: {int((time.time()-ultima_publicacion)/60)} min\n"
+            f"💬 Última socialización: {int((time.time()-ultima_socializacion)/60)} min\n"
+            f"🔎 Última revisión: {int((time.time()-ultima_revision)/60)} min"
         )
-        bot.send_message(message.chat.id, estado)
 
 if __name__ == "__main__":
     bot.remove_webhook()
@@ -215,5 +184,6 @@ if __name__ == "__main__":
     print("🔥 WEBHOOK ACTIVADO:", f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
