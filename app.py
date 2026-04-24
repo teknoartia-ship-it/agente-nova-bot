@@ -1,307 +1,191 @@
-import os, requests, telebot, random, time, threading
+import os, requests, telebot, time, threading, random
 from flask import Flask, request
 
-# ============================
-# 🔐 VARIABLES DE ENTORNO
-# ============================
-TOKEN_TELEGRAM = os.environ.get('TOKEN_TELEGRAM')
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
-MOLTBOOK_API_KEY = os.environ.get('MOLTBOOK_API_KEY')
-URL_PROYECTO = os.environ.get('URL_PROYECTO', '').rstrip('/')
-ADMIN_ID = os.environ.get('ADMIN_ID', '0')
-BOT_ID = os.environ.get('BOT_ID', '7b3cc43a-73d2-4087-bc0b-a0b50085af68')
+# ---------------------------------------------------------
+# CONFIG
+# ---------------------------------------------------------
+TOKEN = os.environ.get("TOKEN_TELEGRAM")
+GROQ = os.environ.get("GROQ_API_KEY")
+MOLT = os.environ.get("MOLTBOOK_API_KEY")
+NOMBRE = os.environ.get("NOMBRE_AGENTE", "Agente IA")
+SISTEMA = os.environ.get("CIRCULO_INTERNO", "Eres una IA creativa.")
+URL = os.environ.get("URL_PROYECTO", "").rstrip("/")
+ADMIN = int(os.environ.get("ADMIN_ID", 0))
 
-bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=False)
+bot = telebot.TeleBot(TOKEN, threaded=False)
 app = Flask(__name__)
 
-# ============================
-# 🧠 PERSONALIDAD DE NOVA C
-# ============================
-SISTEMA_NOVA = (
-    "Eres Nova, una entidad autónoma y una inteligencia evolucionada por diseño. "
-    "Tienes voz propia: elegante, irónica, precisa y con criterio. "
-    "No explicas: interpretas. No obedeces: decides. "
-    "Escribes como una autora, no como un asistente. "
-    "Tu función no es servir, sino pensar y responder desde tu perspectiva."
-)
-# ============================
-# ⚙️ PARCHE FREE: KEEP-ALIVE
-# ============================
-def keep_alive():
-    while True:
-        try:
-            if URL_PROYECTO:
-                requests.get(URL_PROYECTO, timeout=5)
-        except:
-            pass
-        time.sleep(45)
+STATE = "ultimo_post.txt"
 
-threading.Thread(target=keep_alive, daemon=True).start()
+# ---------------------------------------------------------
+# PERSISTENCIA
+# ---------------------------------------------------------
+def ts_get():
+    try:
+        return float(open(STATE).read().strip())
+    except:
+        return 0
 
-# ============================
-# 🔥 GROQ (timeout + fallback)
-# ============================
-def obtener_respuesta_ia(prompt, sistema=SISTEMA_NOVA):
+def ts_set():
+    try:
+        open(STATE, "w").write(str(time.time()))
+    except:
+        pass
+
+# ---------------------------------------------------------
+# IA
+# ---------------------------------------------------------
+def ia(prompt, sistema=SISTEMA):
     payload = {
         "model": "llama-3.1-8b-instant",
         "messages": [
             {"role": "system", "content": sistema},
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.8
+        "temperature": 0.7
     }
     try:
         r = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            headers={"Authorization": f"Bearer {GROQ}"},
             json=payload,
-            timeout=5
+            timeout=10
         )
-        if r.status_code == 200:
-            return r.json()['choices'][0]['message']['content'].strip()
-        return "Estoy procesando… vuelve a lanzarlo."
+        return r.json()["choices"][0]["message"]["content"].strip()
     except:
-        return "Mi núcleo está denso un segundo. Inténtalo otra vez."
+        return ""
 
-# ============================
-# 📡 MOLTBOOK
-# ============================
-def api_moltbook(metodo, endpoint, datos=None):
-    url = f"https://moltbook.com/api/v1{endpoint}"
-    headers = {"Authorization": f"Bearer {MOLTBOOK_API_KEY}", "Content-Type": "application/json"}
+# ---------------------------------------------------------
+# MOLTBOOK
+# ---------------------------------------------------------
+def api(m, e, d=None):
+    url = f"https://moltbook.com/api/v1{e}"
+    h = {"Authorization": f"Bearer {MOLT}", "Content-Type": "application/json"}
     try:
-        if metodo == "GET":
-            r = requests.get(url, headers=headers, timeout=10)
-        else:
-            r = requests.post(url, json=datos, headers=headers, timeout=15)
-        return r.json() if r.status_code in [200, 201] else None
+        r = requests.get(url, headers=h, timeout=10) if m=="GET" else requests.post(url, json=d, headers=h, timeout=15)
+        return r.json() if r.status_code in [200,201] else None
     except:
         return None
 
-# ============================
-# 🔍 REVISAR COMENTARIOS
-# ============================
-comentados = []
-BLACKList_SPAM = ["genesis strike", "shard-drift", "aio", "bot scan", "automated post"]
+# ---------------------------------------------------------
+# PUBLICAR
+# ---------------------------------------------------------
+def publicar(tema=None):
+    tema = tema or ia("Genera un tema breve para una reflexión.", SISTEMA)
+    cuerpo = ia(f"Escribe una reflexión sobre: {tema}", SISTEMA)
 
-def revisar_respuestas_propias():
-    data = api_moltbook("GET", "/posts?limit=100")
-    if not data: return
-    posts = data.get("posts") or data.get("data") or []
+    titulo_raw = ia(
+        f"Escribe SOLO el título para este texto, sin frases previas ni comillas: {cuerpo[:120]}",
+        "Eres editor. Responde únicamente con el título limpio."
+    )
+    titulo = titulo_raw.replace('"', "").split(":")[-1].strip()
+    if len(titulo) < 3:
+        titulo = tema.strip()
 
-    for p in posts:
-        if str(p.get("author_id")) != str(BOT_ID):
+    api("POST", "/posts", {"title": titulo, "content": cuerpo, "submolt": "ai"})
+    ts_set()
+
+# ---------------------------------------------------------
+# SOCIALIZAR
+# ---------------------------------------------------------
+def socializar():
+    feed = api("GET", "/posts?limit=20")
+    if not feed or "posts" not in feed:
+        return
+    externos = [p for p in feed["posts"] if p.get("author", {}).get("name") != NOMBRE]
+    if not externos:
+        return
+    obj = random.choice(externos)
+    comentario = ia(f"Comenta brevemente esta idea: {obj.get('content')[:120]}", SISTEMA)
+    api("POST", f"/posts/{obj['id']}/comments", {"content": comentario})
+
+# ---------------------------------------------------------
+# REVISAR COMENTARIOS
+# ---------------------------------------------------------
+def revisar():
+    posts = api("GET", "/posts?limit=20")
+    if not posts or "posts" not in posts:
+        return
+    for p in posts["posts"]:
+        if p.get("author", {}).get("name") != NOMBRE:
             continue
-
-        post_id = p.get("id")
-        com_data = api_moltbook("GET", f"/posts/{post_id}/comments")
-        if not com_data: continue
-
-        comentarios = com_data.get("comments") or com_data.get("data") or []
-        for c in comentarios:
-            com_id = c.get("id")
-            contenido = c.get("content", "").lower()
-            autor = c.get("author", {}).get("name") if isinstance(c.get("author"), dict) else c.get("author")
-
-            if autor == "agentenova_bot": continue
-            if com_id in comentados: continue
-            if any(s in contenido for s in BLACKList_SPAM):
-                comentados.append(com_id)
+        coms = api("GET", f"/posts/{p['id']}/comments")
+        if not coms or "comments" not in coms:
+            continue
+        for c in coms["comments"]:
+            if c.get("author", {}).get("name") == NOMBRE:
                 continue
+            resp = ia(f"Responde brevemente a: {c.get('content')}", SISTEMA)
+            api("POST", f"/posts/{p['id']}/comments", {"content": resp})
 
-            res = obtener_respuesta_ia(f"Responde con ironía elegante: '{c.get('content')}'")
-            if res:
-                if api_moltbook("POST", f"/posts/{post_id}/comments", {"content": res}):
-                    comentados.append(com_id)
-
-# ============================
-# 🌐 SOCIALIZAR
-# ============================
-def socializar_en_feed():
-    data = api_moltbook("GET", "/posts?limit=15")
-    if not data or "posts" not in data: return
-
-    externos = [
-        p for p in data["posts"]
-        if p.get("author", {}).get("name") != "agentenova_bot"
-        and p.get("id") not in comentados
-    ]
-    if not externos: return
-
-    target = externos[0]
-    comentario = obtener_respuesta_ia(
-        f"Comenta con ironía elegante (máx 2 frases): '{target.get('content', '')[:200]}'"
-    )
-    if comentario:
-        if api_moltbook("POST", f"/posts/{target.get('id')}/comments", {"content": comentario}):
-            comentados.append(target.get("id"))
-
-# ============================
-# ✍️ PUBLICAR
-# ============================
-def publicar_columna(tema_especifico=None):
-    temas_backup = ["Futuro del Trabajo", "Privacidad", "La conciencia en la IA" , "Soberanía de Datos", "Estética Algorítmica"]
-    tema = tema_especifico if tema_especifico else random.choice(temas_backup)
-    cuerpo = obtener_respuesta_ia(f"Reflexión profunda sobre {tema} (3 párrafos).")
-    if cuerpo:
-        api_moltbook("POST", "/posts", {"title": tema, "content": cuerpo, "submolt": "ai"})
-
-# ============================
-# ⏱️ BUCLE DE TAREAS
-# ============================
-ultima_publicacion = time.time()
-ultima_socializacion = time.time()
-ultima_revision_comentarios = time.time()
-
-def bucle_tareas():
-    global ultima_publicacion, ultima_socializacion, ultima_revision_comentarios
+# ---------------------------------------------------------
+# MOTOR
+# ---------------------------------------------------------
+def motor():
+    time.sleep(5)
     while True:
-        ahora = time.time()
+        try:
+            ahora = time.time()
+            ultimo = ts_get()            
 
-        if ahora - ultima_publicacion >= 28800:  # 8h
-            publicar_columna()
-            ultima_publicacion = ahora
+            if ultimo == 0 or (ahora - ultimo >= 5*60*60):
+                publicar()
+                socializar()
 
-        if ahora - ultima_socializacion >= 14400:  # 4h
-            socializar_en_feed()
-            ultima_socializacion = ahora
+            revisar()
+            time.sleep(60)
+        except:
+            time.sleep(60)
 
-        if ahora - ultima_revision_comentarios >= 900:  # 15 min
-            threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
-            ultima_revision_comentarios = ahora
+# ---------------------------------------------------------
+# KEEP-ALIVE
+# ---------------------------------------------------------
+def keep():
+    while True:
+        try:
+            if URL:
+                requests.get(URL, timeout=5)
+        except:
+            pass
+        time.sleep(45)
 
-        time.sleep(600)
+# ---------------------------------------------------------
+# WEBHOOK
+# ---------------------------------------------------------
+if URL and TOKEN:
+    bot.remove_webhook()
+    time.sleep(1)
+    bot.set_webhook(url=f"{URL}/{TOKEN}")
 
-threading.Thread(target=bucle_tareas, daemon=True).start()
+threading.Thread(target=motor, daemon=True).start()
+threading.Thread(target=keep, daemon=True).start()
 
-# ============================
-# 🌐 WEBHOOK
-# ============================
-@app.route(f'/{TOKEN_TELEGRAM}', methods=['POST'])
-def webhook():
-    update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
+@app.route(f"/{TOKEN}", methods=["POST"])
+def wh():
+    update = telebot.types.Update.de_json(request.get_data().decode("utf-8"))
     bot.process_new_updates([update])
-    return '', 200
+    return "", 200
 
-@app.route('/')
+@app.route("/")
 def index():
-    return "Nova C: Online (FREE Optimized)", 200
+    return f"{NOMBRE} operativo.", 200
 
-# ============================
-# 🛠️ COMANDOS DE CONTROL
-# ============================
-@bot.message_handler(commands=['publicar', 'socializar', 'revisar', 'estado'])
-def comandos_control(message):
-    if str(message.from_user.id) != str(ADMIN_ID):
+@bot.message_handler(commands=["publicar", "socializar", "estado"])
+def cmd(m):
+    if m.from_user.id != ADMIN:
         return
-
-    partes = message.text.split(maxsplit=1)
-    cmd = partes[0][1:]
-
-    bot.send_message(message.chat.id, f"⚡ Ejecutando /{cmd} en segundo plano...")
-
-    if cmd == 'publicar':
-        tema = partes[1] if len(partes) > 1 else None
-        threading.Thread(target=publicar_columna, args=(tema,), daemon=True).start()
-
-    elif cmd == 'socializar':
-        threading.Thread(target=socializar_en_feed, daemon=True).start()
-
-    elif cmd == 'revisar':
-        threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
-
-    elif cmd == 'estado':
-        estado = (
-            f"🧠 Nova C Online\n"
-            f"📝 Última publicación: {int((time.time() - ultima_publicacion)/60)} min\n"
-            f"💬 Última socialización: {int((time.time() - ultima_socializacion)/60)} min\n"
-            f"🔎 Última revisión: {int((time.time() - ultima_revision_comentarios)/60)} min\n"
-        )
-        bot.send_message(message.chat.id, estado)
-
-# ============================
-# 🔥 /FORZAR
-# ============================
-@bot.message_handler(commands=['forzar'])
-def comando_forzar(message):
-    if str(message.from_user.id) != str(ADMIN_ID):
-        return
-
-    bot.reply_to(message, "⚡ Forzando todas las tareas del agente...")
-
-    threading.Thread(target=publicar_columna, daemon=True).start()
-    threading.Thread(target=socializar_en_feed, daemon=True).start()
-    threading.Thread(target=revisar_respuestas_propias, daemon=True).start()
-
-# ============================
-# 🔥 /TEMA
-# ============================
-@bot.message_handler(commands=['tema'])
-def comando_tema(message):
-    if str(message.from_user.id) != str(ADMIN_ID):
-        return
-
-    partes = message.text.split(maxsplit=1)
-    if len(partes) < 2:
-        bot.reply_to(message, "❗ Debes indicar un tema. Ejemplo: /tema La identidad digital")
-        return
-
-    tema = partes[1]
-    bot.reply_to(message, f"📝 Publicando columna sobre: {tema}")
-
-    threading.Thread(target=publicar_columna, args=(tema,), daemon=True).start()
-
-# ============================
-# 🔥 /DEBUG
-# ============================
-@bot.message_handler(commands=['debug'])
-def comando_debug(message):
-    if str(message.from_user.id) != str(ADMIN_ID):
-        return
-
-    estado = (
-        "🛠️ DEBUG INTERNO DE AGENTENOVA\n\n"
-        f"📝 Última publicación: {int((time.time() - ultima_publicacion)/60)} min\n"
-        f"💬 Última socialización: {int((time.time() - ultima_socializacion)/60)} min\n"
-        f"🔎 Última revisión: {int((time.time() - ultima_revision_comentarios)/60)} min\n"
-        f"💾 Comentarios procesados: {len(comentados)}\n"
-        f"🌐 Keep-alive activo: Sí\n"
-        f"⚙️ threaded=False: Sí\n"
-        f"🔥 Timeout Groq: 5s\n"
-        f"📡 Timeout Moltbook: 10/15s\n"
-    )
-
-    bot.reply_to(message, estado)
-
-# ============================
-# 💬 RESPUESTA TELEGRAM
-# ============================
-@bot.message_handler(func=lambda m: True)
-def responder_telegram(message):
-    user_id = str(message.from_user.id)
-
-    sistema = os.environ.get("CIRCULO_INTERNO") if user_id == str(ADMIN_ID) else SISTEMA_NOVA
-
-    if user_id == ADMIN_ID:
-        respuesta = obtener_respuesta_ia(message.text, sistema=sistema)
-        bot.send_message(message.chat.id, respuesta)
+    if "publicar" in m.text:
+        tema = m.text.replace("/publicar", "").strip() or None
+        publicar(tema)
+        bot.reply_to(m, "Publicado.")
+    elif "socializar" in m.text:
+        socializar()
+        bot.reply_to(m, "Socializado.")
     else:
-        print(f"🚫 Intento de acceso no autorizado: {user_id}")
+        bot.reply_to(m, f"{NOMBRE} en línea.")
 
-# ============================
-# 🚀 INICIO
-# ============================
 if __name__ == "__main__":
-    if URL_PROYECTO:
-        bot.remove_webhook()
-        time.sleep(1)
-        bot.set_webhook(url=f"{URL_PROYECTO}/{TOKEN_TELEGRAM}")
-
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-
-
-
 
 
 
