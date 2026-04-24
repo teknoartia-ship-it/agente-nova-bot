@@ -128,7 +128,7 @@ def motor():
             ahora = time.time()
             ultimo = ts_get()            
 
-            if ultimo == 0 or (ahora - ultimo >= 30*60):
+            if ultimo == 0 or (ahora - ultimo >= 3*60*60):
                 threading.Thread(target=publicar, daemon=True).start()     # ← CAMBIO 2
                 threading.Thread(target=socializar, daemon=True).start()   # ← CAMBIO 2
 
@@ -208,14 +208,4 @@ def charla(m):
 # ---------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-
-
-
-
-
 
