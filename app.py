@@ -63,10 +63,14 @@ def api(m, e, d=None):
     h = {"Authorization": f"Bearer {MOLT}", "Content-Type": "application/json"}
     try:
         r = requests.get(url, headers=h, timeout=10) if m=="GET" else requests.post(url, json=d, headers=h, timeout=15)
-        return r.json() if r.status_code in [200,201] else None
-    except:
-        return None
 
+        if m == "POST" and e == "/posts":
+            print(f"DEBUG MOLTBOOK POST: Status {r.status_code} - Response: {r.text}")
+
+        return r.json() if r.status_code in [200,201] else None
+    except Exception as err:
+        print(f"DEBUG API EXCEPTION: {str(err)}")
+        return None
 # ---------------------------------------------------------
 # PUBLICAR
 # ---------------------------------------------------------
