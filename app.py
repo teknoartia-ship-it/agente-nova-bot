@@ -87,8 +87,9 @@ def publicar(tema=None):
         titulo = tema.strip()
 
     respuesta = api("POST", "/posts", {"title": titulo, "content": cuerpo, "submolt": "ai"})
-if respuesta is not None:
-    ts_set()
+    if respuesta is not None:
+        ts_set()
+
 # ---------------------------------------------------------
 # SOCIALIZAR
 # ---------------------------------------------------------
